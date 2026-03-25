@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FM-Operatorium - Arpeggiator</title>
+    <link href="https://fonts.googleapis.com/css2?family=VT323&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --p-color: #33ff33;
+            --bg-color: #000000;
+            --font-stack: 'VT323', monospace;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--p-color);
+            font-family: var(--font-stack);
+            font-size: 18px; 
+            margin: 0;
+            padding: 10px;
+            text-shadow: 0 0 5px var(--p-color);
+            overflow: hidden; 
+        }
+
+        .container {
+            max-width: 400px; 
+            margin: 0 auto;
+            border: 2px solid var(--p-color);
+            padding: 10px;
+            box-shadow: 0 0 10px rgba(51, 255, 51, 0.3);
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        h1 {
+            text-transform: uppercase;
+            font-size: 20px;
+            border-bottom: 1px dashed var(--p-color);
+            padding-bottom: 5px;
+            margin: 0;
+            display: flex;
+            align-items: center;
+        }
+
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+
+        label {
+            text-transform: uppercase;
+            font-size: 16px;
+        }
+
+        select, input[type="range"] {
+            width: 100%;
+            background-color: #0a1a0a;
+            color: var(--p-color);
+            border: 1px solid var(--p-color);
+            font-family: var(--font-stack);
+            font-size: 18px;
+            padding: 5px;
+            box-sizing: border-box;
+        }
+
+        input[type="range"] {
+            -webkit-appearance: none;
+            height: 10px;
+            outline: none;
+            padding: 0;
+            margin-top: 5px;
+        }
+
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 15px;
+            height: 20px;
+            background: var(--p-color);
+            cursor: pointer;
+        }
+
+        .btn-hold {
+            width: 100%;
+            background-color: #0a1a0a;
+            color: var(--p-color);
+            border: 1px solid var(--p-color);
+            font-family: var(--font-stack);
+            font-size: 20px;
+            padding: 8px;
+            cursor: pointer;
+            text-transform: uppercase;
+            transition: all 0.2s;
+        }
+
+        .btn-hold.active {
+            background-color: var(--p-color);
+            color: #000;
+            box-shadow: 0 0 10px var(--p-color);
+        }
+
+        .value-display {
+            font-weight: bold;
+            color: #fff;
+        }
+
+        .grid-2 {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+        }
+
+        #status-led {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background-color: #113311;
+            margin-right: 8px;
+        }
+
+        #status-led.active {
+            background-color: #33ff33;
+            box-shadow: 0 0 10px #33ff33;
+        }
+
+        pre {
+            background-color: #051005;
+            border: 1px solid #225522;
+            padding: 8px;
+            height: 80px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            margin: 0;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <h1><span id="status-led"></span>ARPEGGIATOR</h1>
+
+        <div class="control-group">
+            <label>> MIDI IN (KEYBOARD)</label>
+            <select id="midiInSelect"><option value="">SEARCHING...</option></select>
+        </div>
+
+        <div class="control-group">
+            <label>> MIDI OUT (MINIDEXED)</label>
+            <select id="midiOutSelect"><option value="">SEARCHING...</option></select>
+        </div>
+
+        <div class="grid-2">
+            <div class="control-group">
+                <label>> TYPE</label>
+                <select id="arpType">
+                    <option value="up">UP</option>
+                    <option value="down">DOWN</option>
+                    <option value="updown">UP/DOWN</option>
+                    <option value="random">RANDOM</option>
+                </select>
+            </div>
+            <div class="control-group">
+                <label>> OCTAVES</label>
+                <select id="arpOctaves">
+                    <option value="1">1 OCT.</option>
+                    <option value="2">2 OCT.</option>
+                    <option value="3">3 OCT.</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="control-group">
+            <label>> NOTE LENGTH</label>
+            <select id="noteLength">
+                <option value="4">1/1 (Whole)</option>
+                <option value="2">1/2 (Half)</option>
+                <option value="1">1/4 (Quarter)</option>
+                <option value="0.5">1/8 (Eighth)</option>
+                <option value="0.25" selected>1/16 (Sixteenth)</option>
+                <option value="0.125">1/32 (Thirty-second)</option>
+                <option value="6">1/1. (Dotted Whole)</option>
+                <option value="3">1/2. (Dotted Half)</option>
+                <option value="1.5">1/4. (Dotted Quarter)</option>
+                <option value="0.75">1/8. (Dotted Eighth)</option>
+                <option value="0.375">1/16. (Dotted Sixteenth)</option>
+                <option value="0.1875">1/32. (Dotted Thirty-second)</option>
+            </select>
+        </div>
+
+        <div class="control-group">
+            <label>> TEMPO: <span id="valBpm" class="value-display">120</span> BPM</label>
+            <input type="range" id="sliderBpm" min="60" max="200" value="120">
+        </div>
+
+        <button id="btnHold" class="btn-hold">HOLD: OFF</button>
+
+        <pre id="terminal">System ready.</pre>
+    </div>
+
+    <script>
+        const terminal = document.getElementById('terminal');
+        const midiInSelect = document.getElementById('midiInSelect');
+        const midiOutSelect = document.getElementById('midiOutSelect');
+        const sliderBpm = document.getElementById('sliderBpm');
+        const valBpm = document.getElementById('valBpm');
+        const arpTypeSelect = document.getElementById('arpType');
+        const arpOctavesSelect = document.getElementById('arpOctaves');
+        const noteLengthSelect = document.getElementById('noteLength');
+        const statusLed = document.getElementById('status-led');
+        const btnHold = document.getElementById('btnHold');
+
+        let midiAccess = null;
+        let selectedInput = null;
+        let selectedOutput = null;
+
+        let activeNotes = new Map();   
+        let physicalNotes = new Set(); 
+        let arpSequence = [];          
+        let currentStep = 0;      
+        let playingNote = null;   
+        let arpTimer = null;
+        let bpm = 120;
+        let noteLengthMultiplier = 0.25; 
+        let isRunning = false;
+        let holdEnabled = false;
+
+        function logMsg(msg) {
+            terminal.textContent = msg + '\n' + terminal.textContent.split('\n').slice(0, 4).join('\n');
+        }
+
+        if (navigator.requestMIDIAccess) {
+            navigator.requestMIDIAccess().then(onMIDISuccess, () => logMsg('?ERROR: MIDI ACCESS DENIED.'));
+        } else {
+            logMsg('?ERROR: WebMIDI not supported.');
+        }
+
+        function onMIDISuccess(access) {
+            midiAccess = access;
+            updatePorts();
+            midiAccess.onstatechange = updatePorts;
+            startArpClock();
+        }
+
+        function updatePorts() {
+            midiInSelect.innerHTML = '<option value="">-- SELECT --</option>';
+            for (let input of midiAccess.inputs.values()) {
+                midiInSelect.innerHTML += `<option value="${input.id}">${input.name}</option>`;
+            }
+
+            midiOutSelect.innerHTML = '<option value="">-- SELECT --</option>';
+            for (let output of midiAccess.outputs.values()) {
+                midiOutSelect.innerHTML += `<option value="${output.id}">${output.name}</option>`;
+            }
+        }
+
+        midiInSelect.addEventListener('change', (e) => {
+            if (selectedInput) selectedInput.onmidimessage = null; 
+            if (e.target.value) {
+                selectedInput = midiAccess.inputs.get(e.target.value);
+                selectedInput.onmidimessage = handleMidiInput;
+                logMsg(`> IN: ${selectedInput.name}`);
+            }
+        });
+
+        midiOutSelect.addEventListener('change', (e) => {
+            if (e.target.value) {
+                selectedOutput = midiAccess.outputs.get(e.target.value);
+                logMsg(`> OUT: ${selectedOutput.name}`);
+            } else {
+                selectedOutput = null;
+            }
+        });
+
+        function handleMidiInput(message) {
+            const [status, note, velocity] = message.data;
+            const cmd = status >> 4;
+            const chan = status & 0xf; 
+
+            if (cmd === 9 && velocity > 0) {
+                if (physicalNotes.size === 0 && holdEnabled) {
+                    activeNotes.clear(); 
+                    currentStep = 0; 
+                }
+                physicalNotes.add(note);
+                activeNotes.set(note, velocity);
+                updateArpSequence();
+            } else if (cmd === 8 || (cmd === 9 && velocity === 0)) {
+                physicalNotes.delete(note);
+                if (!holdEnabled) {
+                    activeNotes.delete(note);
+                    updateArpSequence();
+                }
+            }
+        }
+
+        btnHold.addEventListener('click', () => {
+            holdEnabled = !holdEnabled;
+            if (holdEnabled) {
+                btnHold.textContent = 'HOLD: ON';
+                btnHold.classList.add('active');
+            } else {
+                btnHold.textContent = 'HOLD: OFF';
+                btnHold.classList.remove('active');
+                
+                if (physicalNotes.size === 0) {
+                    activeNotes.clear();
+                    updateArpSequence();
+                }
+            }
+        });
+
+        function updateArpSequence() {
+            if (activeNotes.size === 0) {
+                arpSequence = [];
+                isRunning = false;
+                statusLed.classList.remove('active');
+                if (playingNote !== null) sendNoteOff(playingNote);
+                return;
+            }
+
+            isRunning = true;
+            statusLed.classList.add('active');
+
+            let sortedKeys = Array.from(activeNotes.keys()).sort((a, b) => a - b);
+            
+            let octaves = parseInt(arpOctavesSelect.value);
+            let expanded = [];
+            for (let i = 0; i < octaves; i++) {
+                sortedKeys.forEach(n => {
+                    expanded.push({
+                        note: n + (i * 12),
+                        velocity: activeNotes.get(n) 
+                    });
+                });
+            }
+
+            const type = arpTypeSelect.value;
+            if (type === 'up') {
+                arpSequence = expanded;
+            } else if (type === 'down') {
+                arpSequence = expanded.slice().reverse();
+            } else if (type === 'updown') {
+                arpSequence = [...expanded];
+                let down = expanded.slice().reverse().slice(1, -1); 
+                arpSequence = arpSequence.concat(down);
+            } else if (type === 'random') {
+                arpSequence = expanded.slice().sort(() => Math.random() - 0.5);
+            }
+        }
+
+        function startArpClock() {
+            if (arpTimer) clearInterval(arpTimer);
+            const msPerNote = (60000 / bpm) * noteLengthMultiplier;
+            
+            if (msPerNote < 20) {
+                logMsg("?TEMPO TOO FAST.");
+                return;
+            }
+            arpTimer = setInterval(arpTick, msPerNote);
+        }
+
+        function arpTick() {
+            if (!isRunning || !selectedOutput || arpSequence.length === 0) return;
+
+            if (playingNote !== null) {
+                sendNoteOff(playingNote);
+            }
+
+            if (currentStep >= arpSequence.length) currentStep = 0;
+
+            playingNote = arpSequence[currentStep];
+            sendNoteOn(playingNote);
+
+            currentStep++;
+            if (arpTypeSelect.value === 'random') {
+                updateArpSequence();
+            }
+        }
+
+        function sendNoteOn(noteObj) {
+            if (!selectedOutput) return;
+            selectedOutput.send([0x90, noteObj.note, noteObj.velocity]); 
+        }
+
+        function sendNoteOff(noteObj) {
+            if (!selectedOutput) return;
+            selectedOutput.send([0x80, noteObj.note, 0]);
+            playingNote = null;
+        }
+
+        sliderBpm.addEventListener('input', (e) => {
+            bpm = e.target.value;
+            valBpm.textContent = bpm;
+            startArpClock(); 
+        });
+
+        noteLengthSelect.addEventListener('change', (e) => {
+            noteLengthMultiplier = parseFloat(e.target.value);
+            startArpClock(); 
+        });
+
+        arpTypeSelect.addEventListener('change', updateArpSequence);
+        arpOctavesSelect.addEventListener('change', updateArpSequence);
+    </script>
+</body>
+</html>

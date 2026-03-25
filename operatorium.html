@@ -1,0 +1,462 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FM-Operatorium-OS - DX7 Sheet Generator</title>
+    <link href="https://fonts.googleapis.com/css2?family=VT323&display=swap" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <style>
+        :root {
+            --p-color: #33ff33; 
+            --bg-color: #000000;
+            --font-stack: 'VT323', monospace;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--p-color);
+            font-family: var(--font-stack);
+            font-size: 20px;
+            margin: 0;
+            padding: 20px;
+            text-shadow: 0 0 5px var(--p-color);
+            line-height: 1.2;
+        }
+
+        .os-container { max-width: 900px; margin: 0 auto; }
+        .boot-header { margin-bottom: 30px; text-transform: uppercase; }
+        
+        .control-panel {
+            border: 2px solid var(--p-color);
+            padding: 20px;
+            margin-bottom: 30px;
+            box-shadow: 0 0 10px rgba(51, 255, 51, 0.3);
+        }
+        
+        .panel-label { display: block; margin-bottom: 10px; text-transform: uppercase; }
+
+        input[type="file"], select {
+            font-family: var(--font-stack);
+            font-size: 18px;
+            background-color: #0a1a0a;
+            color: var(--p-color);
+            border: 1px solid var(--p-color);
+            padding: 8px;
+            width: 100%;
+            box-sizing: border-box;
+            margin-bottom: 20px;
+            text-transform: uppercase;
+        }
+        
+        select option { background-color: #0a1a0a; color: var(--p-color); }
+
+        .btn-group { display: flex; gap: 15px; }
+
+        button {
+            font-family: var(--font-stack);
+            font-size: 20px;
+            background-color: transparent;
+            color: var(--p-color);
+            border: 2px solid var(--p-color);
+            padding: 10px 20px;
+            cursor: pointer;
+            text-transform: uppercase;
+            transition: all 0.2s;
+            flex: 1;
+        }
+
+        button:hover:not(:disabled) {
+            background-color: var(--p-color);
+            color: var(--bg-color);
+            text-shadow: none;
+            box-shadow: 0 0 15px var(--p-color);
+        }
+
+        button:disabled {
+            border-color: #225522;
+            color: #225522;
+            cursor: not-allowed;
+            text-shadow: none;
+        }
+
+        #txtBtn {
+            border-color: #33ccff;
+            color: #33ccff;
+            text-shadow: 0 0 5px #33ccff;
+        }
+        #txtBtn:hover:not(:disabled) {
+            background-color: #33ccff;
+            color: #000;
+            text-shadow: none;
+            box-shadow: 0 0 15px #33ccff;
+        }
+        #txtBtn:disabled { border-color: #114455; color: #114455; text-shadow: none; }
+
+        #pdfBtn {
+            border-color: #ff3333;
+            color: #ff3333;
+            text-shadow: 0 0 5px #ff3333;
+        }
+        #pdfBtn:hover:not(:disabled) {
+            background-color: #ff3333;
+            color: #000;
+            text-shadow: none;
+            box-shadow: 0 0 15px #ff3333;
+        }
+        #pdfBtn:disabled { border-color: #552222; color: #552222; text-shadow: none; }
+
+        pre {
+            font-family: var(--font-stack);
+            font-size: 18px;
+            line-height: 1.0; 
+            white-space: pre;
+            overflow-x: auto;
+            border-top: 1px solid #225522;
+            padding-top: 20px;
+        }
+
+        .hidden { display: none; }
+        
+        .cursor {
+            display: inline-block;
+            width: 10px; height: 18px;
+            background-color: var(--p-color);
+            animation: blink 1s step-end infinite;
+            vertical-align: bottom;
+        }
+        @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+    </style>
+</head>
+<body>
+
+    <div class="os-container">
+        <div class="boot-header">
+            *** FM-OPERATORIUM-OS V1.0 ***<br>
+            *** BY SOUNDPLANTAGE.COM   ***<br>
+            64K RAM SYSTEM  38911 BASIC BYTES FREE
+        </div>
+
+        READY.<br>
+        <div class="control-panel">
+            <span class="panel-label">> SYS 1000 (LOAD .SYX FILE)</span>
+            <input type="file" id="syxFile" accept=".syx">
+
+            <div id="voiceSelectContainer" class="hidden">
+                <span class="panel-label">> SELECT VOICE INDEX</span>
+                <select id="voiceSelect">
+                    <option value="all">ALL 32 VOICES</option>
+                </select>
+            </div>
+
+            <div class="btn-group">
+                <button id="generateBtn" disabled>PREVIEW</button>
+                <button id="txtBtn" disabled>SAVE .TXT</button>
+                <button id="pdfBtn" disabled>PRINT .PDF</button>
+            </div>
+        </div>
+
+        READY.<br>
+        <pre id="outputArea"></pre><span class="cursor"></span>
+    </div>
+
+    <script>
+        const NOTE_NAMES = ['A-1', 'A#-1', 'B-1', 'C0', 'C#0', 'D0', 'D#0', 'E0', 'F0', 'F#0', 'G0', 'G#0', 'A0', 'A#0', 'B0', 'C1', 'C#1', 'D1', 'D#1', 'E1', 'F1', 'F#1', 'G1', 'G#1', 'A1', 'A#1', 'B1', 'C2', 'C#2', 'D2', 'D#2', 'E2', 'F2', 'F#2', 'G2', 'G#2', 'A2', 'A#2', 'B2', 'C3', 'C#3', 'D3', 'D#3', 'E3', 'F3', 'F#3', 'G3', 'G#3', 'A3', 'A#3', 'B3', 'C4', 'C#4', 'D4', 'D#4', 'E4', 'F4', 'F#4', 'G4', 'G#4', 'A4', 'A#4', 'B4', 'C5', 'C#5', 'D5', 'D#5', 'E5', 'F5', 'F#5', 'G5', 'G#5', 'A6', 'A#6', 'B6', 'C7', 'C#7', 'D7', 'D#7', 'E7', 'F7', 'F#7', 'G7', 'G#7', 'A7', 'A#7', 'B7', 'C8'];
+        const CURVE_MODES = {0: '-LIN', 1: '-EXP', 2: '+EXP', 3: '+LIN'};
+        const LFO_WAVES = {0: 'TRIANGLE', 1: 'SAW UP', 2: 'SAW DOWN', 3: 'SQUARE', 4: 'SINE', 5: 'S+HOLD'};
+        const DX7_HEADER = [0xF0, 0x43, 0x00, 0x09, 0x20, 0x00];
+        
+        let loadedVoices = [];
+        let bankName = "";
+
+        const fileInput = document.getElementById('syxFile');
+        const voiceSelect = document.getElementById('voiceSelect');
+        const voiceSelectContainer = document.getElementById('voiceSelectContainer');
+        const generateBtn = document.getElementById('generateBtn');
+        const txtBtn = document.getElementById('txtBtn');
+        const pdfBtn = document.getElementById('pdfBtn');
+        const outputArea = document.getElementById('outputArea');
+
+        fileInput.addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            bankName = file.name;
+            const reader = new FileReader();
+
+            reader.onload = function(event) {
+                const data = new Uint8Array(event.target.result);
+                outputArea.textContent = ""; 
+
+                if (data.length !== 4104) {
+                    outputArea.textContent = "?FILE DATA ERROR. SIZE MUST BE 4104 BYTES.";
+                    generateBtn.disabled = txtBtn.disabled = pdfBtn.disabled = true;
+                    return;
+                }
+
+                for (let i = 0; i < 6; i++) {
+                    if (data[i] !== DX7_HEADER[i]) {
+                        outputArea.textContent = "?SYNTAX ERROR. INVALID SYSEX HEADER.";
+                        generateBtn.disabled = txtBtn.disabled = pdfBtn.disabled = true;
+                        return;
+                    }
+                }
+
+                const bulkData = data.slice(6, 4102);
+                loadedVoices = [];
+                voiceSelect.innerHTML = '<option value="all">ALL 32 VOICES</option>';
+
+                for (let i = 0; i < 32; i++) {
+                    const offset = i * 128;
+                    const voiceData = bulkData.slice(offset, offset + 128);
+                    loadedVoices.push(voiceData);
+                    
+                    let nameArr = [];
+                    for(let n=118; n<128; n++) {
+                        if(voiceData[n] >= 32 && voiceData[n] <= 126) nameArr.push(String.fromCharCode(voiceData[n]));
+                    }
+                    const vName = nameArr.join('').trim();
+                    
+                    const option = document.createElement('option');
+                    option.value = i;
+                    option.textContent = `${(i + 1).toString().padStart(2, '0')}: ${vName.toUpperCase()}`;
+                    voiceSelect.appendChild(option);
+                }
+
+                voiceSelectContainer.classList.remove('hidden');
+                generateBtn.disabled = txtBtn.disabled = pdfBtn.disabled = false;
+                outputArea.textContent = `LOADING "${bankName.toUpperCase()}"... OK.\n32 VOICES FOUND.\nREADY.`;
+            };
+
+            reader.readAsArrayBuffer(file);
+        });
+
+        // PREVIEW
+        generateBtn.addEventListener('click', function() {
+            outputArea.textContent = "PRINTING PREVIEW...\nPLEASE WAIT.";
+            
+            setTimeout(() => {
+                try {
+                    const selection = voiceSelect.value;
+                    let outputText = "";
+
+                    if (selection === "all") {
+                        for (let i = 0; i < 32; i++) {
+                            const params = parseSingleVoice(loadedVoices[i]);
+                            outputText += generateDatasheet(params, bankName, i + 1) + "\n\n\n";
+                        }
+                    } else {
+                        const idx = parseInt(selection);
+                        const params = parseSingleVoice(loadedVoices[idx]);
+                        outputText = generateDatasheet(params, bankName, idx + 1);
+                    }
+
+                    outputArea.textContent = outputText + "\nREADY.";
+                } catch (e) {
+                    outputArea.textContent = `?ERROR: ${e.message}\nREADY.`;
+                }
+            }, 50);
+        });
+
+        // TXT EXPORT
+        txtBtn.addEventListener('click', function() {
+            outputArea.textContent = "GENERATING TXT...\nPLEASE WAIT.";
+            
+            setTimeout(() => {
+                try {
+                    const selection = voiceSelect.value;
+                    let outputText = "";
+                    let filename = "";
+
+                    if (selection === "all") {
+                        for (let i = 0; i < 32; i++) {
+                            const params = parseSingleVoice(loadedVoices[i]);
+                            outputText += generateDatasheet(params, bankName, i + 1) + "\r\n\r\n\r\n";
+                        }
+                        filename = bankName.replace(/\.[^/.]+$/, "") + "_ALL.txt";
+                    } else {
+                        const idx = parseInt(selection);
+                        const params = parseSingleVoice(loadedVoices[idx]);
+                        outputText = generateDatasheet(params, bankName, idx + 1);
+                        let safeName = params.name.replace(/[^a-z0-9]/gi, '_');
+                        filename = safeName + ".txt";
+                    }
+
+                    outputText = outputText.replace(/\n/g, "\r\n");
+
+                    const blob = new Blob([outputText], { type: 'text/plain' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = filename;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    URL.revokeObjectURL(url);
+
+                    outputArea.textContent = `SAVED TO DISK: ${filename}\nREADY.`;
+                } catch (e) {
+                    outputArea.textContent = `?ERROR: ${e.message}\nREADY.`;
+                }
+            }, 50);
+        });
+
+        // PDF EXPORT
+        pdfBtn.addEventListener('click', function() {
+            outputArea.textContent = "GENERATING PDF...\nPLEASE WAIT.";
+            
+            setTimeout(() => {
+                try {
+                    if (typeof window.jspdf === 'undefined') {
+                        outputArea.textContent = "?ERROR: jspdf LIBRARY NOT LOADED.\nCHECK YOUR INTERNET CONNECTION.\nREADY.";
+                        return;
+                    }
+                    
+                    const { jsPDF } = window.jspdf;
+                    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+
+                    doc.setFont("courier", "normal");
+                    doc.setFontSize(11.5); 
+
+                    for (let i = 0; i < 32; i++) {
+                        if (i > 0) doc.addPage(); 
+                        
+                        const params = parseSingleVoice(loadedVoices[i]);
+                        const text = generateDatasheet(params, bankName, i + 1);
+                        const lines = text.split('\n');
+                        
+                        const pageWidth = doc.internal.pageSize.getWidth();
+                        const textWidth = doc.getTextWidth(lines[0]);
+                        const xOffset = (pageWidth - textWidth) / 2;
+                        
+                        doc.text(lines, xOffset, 20, { lineHeightFactor: 1.3 }); 
+                    }
+
+                    let pdfName = bankName.replace(/\.[^/.]+$/, "") + ".pdf";
+                    doc.save(pdfName);
+                    outputArea.textContent = `DOWNLOADED: ${pdfName}\nREADY.`;
+                } catch (e) {
+                    outputArea.textContent = `?ERROR: ${e.message}\nREADY.`;
+                }
+            }, 50);
+        });
+
+        function parseSingleVoice(data) {
+            let params = { ops: [] };
+            for (let i = 0; i < 6; i++) {
+                const offset = i * 17;
+                let op = {};
+                op.eg_rate = [data[offset], data[offset+1], data[offset+2], data[offset+3]];
+                op.eg_level = [data[offset+4], data[offset+5], data[offset+6], data[offset+7]];
+                const bpRaw = data[offset+8];
+                op.breakpoint = (bpRaw >= 0 && bpRaw <= 99) ? NOTE_NAMES[bpRaw] : 'N/A';
+                op.l_depth = data[offset+9];
+                op.r_depth = data[offset+10];
+                op.l_curve = CURVE_MODES[data[offset+11] & 3];
+                op.r_curve = CURVE_MODES[(data[offset+11] >> 2) & 3];
+                op.rate_scaling = data[offset+12] & 0x07;
+                op.amp_mod_sens = data[offset+13] & 0x03;
+                op.key_vel_sens = (data[offset+13] >> 2) & 0x07;
+                op.level = data[offset+14];
+                op.mode = (data[offset+15] & 1) ? 'FIX' : 'RATIO';
+                let coarse_raw = data[offset+15] >> 1;
+                let fine_raw = data[offset+16];
+                
+                if (op.mode === 'RATIO') {
+                    let base_ratio = (coarse_raw === 0) ? 0.5 : coarse_raw;
+                    op.coarse_display = base_ratio;
+                    let calculated_val = base_ratio * (1.0 + (fine_raw / 100.0));
+                    op.freq_string = calculated_val.toFixed(2);
+                } else {
+                    let exponent = (coarse_raw % 4) + (fine_raw / 100.0);
+                    let calculated_val = Math.pow(10, exponent);
+                    op.coarse_display = coarse_raw;
+                    if (calculated_val >= 1000) op.freq_string = calculated_val.toFixed(2);
+                    else if (calculated_val >= 100) op.freq_string = calculated_val.toFixed(3);
+                    else if (calculated_val >= 10) op.freq_string = calculated_val.toFixed(4);
+                    else op.freq_string = calculated_val.toFixed(5);
+                }
+                op.detune = ((data[offset+12] & 120) >> 3) - 7;
+                params.ops.push(op);
+            }
+            params.ops.reverse();
+            params.pitch_eg_rate = [data[102], data[103], data[104], data[105]];
+            params.pitch_eg_level = [data[106], data[107], data[108], data[109]];
+            params.algorithm = (data[110] & 0x1F) + 1;
+            params.feedback = data[111] & 0x07;
+            params.osc_sync = (data[111] & 8) ? 'ON' : 'OFF';
+            params.lfo_speed = data[112];
+            params.lfo_delay = data[113];
+            params.lfo_pmd = data[114];
+            params.lfo_amd = data[115];
+            params.lfo_sync = (data[116] & 0x01) ? 'ON' : 'OFF';
+            params.lfo_wave = LFO_WAVES[(data[116] >> 1) & 0x07];
+            params.p_mod_sens = (data[116] >> 4) & 0x07;
+            params.transpose = data[117] - 24;
+            
+            let nameArr = [];
+            for(let n=118; n<128; n++) {
+                if(data[n] >= 32 && data[n] <= 126) nameArr.push(String.fromCharCode(data[n]));
+            }
+            params.name = nameArr.join('').trim();
+            return params;
+        }
+
+        function padStr(str, len, char=' ') { return String(str).padEnd(len, char); }
+        function createOpRow(label, values) {
+            let row = padStr(label, 14) + " ";
+            row += values.map(v => padStr(v, 7)).join(' ');
+            return row;
+        }
+
+        function generateDatasheet(params, bankName, voiceNum) {
+            const ops = params.ops;
+            let sheet = [];
+            const lineBreak = "=".repeat(62);
+            const thinBreak = "-".repeat(62);
+
+            sheet.push(lineBreak);
+            sheet.push("          DX7 VOICE DATA SHEET by SOUNDPLANTAGE.COM");
+            sheet.push(lineBreak);
+            sheet.push(`Voice #${String(voiceNum).padStart(2, '0')}: ${padStr(params.name.toUpperCase(), 20)}  Bank: ${bankName.toUpperCase()}`);
+            sheet.push(lineBreak);
+            sheet.push(`ALGORITHM: ${padStr(params.algorithm, 4)} FEEDBACK: ${padStr(params.feedback, 4)} TRANSPOSE: ${params.transpose}`);
+            sheet.push(thinBreak);
+            sheet.push(`${padStr('PARAM', 14)} ${padStr('OP1', 7)} ${padStr('OP2', 7)} ${padStr('OP3', 7)} ${padStr('OP4', 7)} ${padStr('OP5', 7)} ${padStr('OP6', 7)}`);
+            sheet.push(thinBreak);
+            sheet.push(createOpRow("OSC MODE", ops.map(op => op.mode)));
+            sheet.push(createOpRow("COARSE", ops.map(op => op.coarse_display)));
+            sheet.push(createOpRow("FINE (FREQ)", ops.map(op => op.freq_string)));
+            sheet.push(createOpRow("DETUNE", ops.map(op => (op.detune > 0 ? '+' : '') + op.detune)));
+            sheet.push(thinBreak);
+            sheet.push(createOpRow("AMP MOD SENS", ops.map(op => op.amp_mod_sens)));
+            sheet.push(createOpRow("VEL SENS", ops.map(op => op.key_vel_sens)));
+            sheet.push(createOpRow("OUT LEVEL", ops.map(op => op.level)));
+            sheet.push(thinBreak);
+            sheet.push(createOpRow("BREAK POINT", ops.map(op => op.breakpoint)));
+            sheet.push(createOpRow("L DEPTH", ops.map(op => op.l_depth)));
+            sheet.push(createOpRow("R DEPTH", ops.map(op => op.r_depth)));
+            sheet.push(createOpRow("L CURVE", ops.map(op => op.l_curve)));
+            sheet.push(createOpRow("R CURVE", ops.map(op => op.r_curve)));
+            sheet.push(createOpRow("RATE SCALING", ops.map(op => op.rate_scaling)));
+            sheet.push(thinBreak);
+            for (let l = 1; l <= 4; l++) { sheet.push(createOpRow(`EG LEVEL ${l}`, ops.map(op => op.eg_level[l-1]))); }
+            sheet.push("   ");
+            for (let r = 1; r <= 4; r++) { sheet.push(createOpRow(`EG RATE ${r}`, ops.map(op => op.eg_rate[r-1]))); }
+            sheet.push(lineBreak);
+            sheet.push("                   LFO, PITCH EG & SYNC");
+            sheet.push(lineBreak);
+            sheet.push(`LFO WAVE: ${padStr(params.lfo_wave, 10)} SPEED: ${padStr(params.lfo_speed, 5)} DELAY: ${params.lfo_delay}`);
+            sheet.push(`PMD: ${padStr(params.lfo_pmd, 10)} AMD: ${padStr(params.lfo_amd, 7)} P MOD SENS: ${params.p_mod_sens}`);
+            sheet.push(`LFO SYNC: ${padStr(params.lfo_sync, 9)} OSC SYNC: ${params.osc_sync}`);
+            sheet.push(thinBreak);
+            const pLevels = params.pitch_eg_level;
+            const pRates = params.pitch_eg_rate;
+            sheet.push(`PITCH EG LEVEL: L1=${padStr(pLevels[0], 3)} L2=${padStr(pLevels[1], 3)} L3=${padStr(pLevels[2], 3)} L4=${pLevels[3]}`);
+            sheet.push(`PITCH EG RATE : R1=${padStr(pRates[0], 3)} R2=${padStr(pRates[1], 3)} R3=${padStr(pRates[2], 3)} R4=${pRates[3]}`);
+            sheet.push(lineBreak);
+            return sheet.join("\n");
+        }
+    </script>
+</body>
+</html>
