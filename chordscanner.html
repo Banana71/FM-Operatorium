@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>FM-Operatorium - Chord Scanner</title>
     <link href="https://fonts.googleapis.com/css2?family=VT323&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/vexflow@4.2.2/build/cjs/vexflow.min.js"></script>
     <style>
         :root {
             --p-color: #33ff33;
@@ -20,11 +21,12 @@
             margin: 0;
             padding: 10px;
             text-shadow: 0 0 5px var(--p-color);
-            overflow: hidden;
+            overflow-x: hidden;
+            overflow-y: auto;
         }
 
         .container {
-            max-width: 500px;
+            max-width: 520px;
             margin: 0 auto;
             border: 2px solid var(--p-color);
             padding: 10px;
@@ -69,15 +71,23 @@
         .checkbox-row {
             display: flex;
             align-items: center;
-            gap: 10px;
+            gap: 20px;
+            flex-wrap: wrap;
         }
 
-        .checkbox-row input[type="checkbox"] {
+        .checkbox-item {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .checkbox-item input[type="checkbox"] {
             width: auto;
             height: 18px;
             margin: 0;
         }
 
+        /* Akkord-Display – fixe Höhe, zweizeilig */
         .chord-display {
             background-color: #200000;
             color: #ff3333;
@@ -85,16 +95,27 @@
             border-radius: 4px;
             padding: 8px;
             text-align: center;
-            font-size: 34px;
-            font-weight: bold;
             text-shadow: 0 0 15px #ff0000;
             box-shadow: inset 0 0 10px #000;
             letter-spacing: 3px;
-            min-height: 50px;
             display: flex;
-            align-items: center;
+            flex-direction: column;
             justify-content: center;
-            opacity: 1;
+            height: 90px;                /* fixe Höhe */
+            box-sizing: border-box;
+        }
+
+        .chord-main {
+            font-size: 34px;
+            font-weight: bold;
+            line-height: 1.2;
+        }
+
+        .chord-alt {
+            font-size: 16px;
+            opacity: 0.9;
+            min-height: 20px;            /* reserviert Platz, auch wenn leer */
+            line-height: 1.2;
         }
 
         @keyframes fadeOut {
@@ -106,19 +127,6 @@
             animation: fadeOut 1s forwards;
         }
 
-        .alt-display {
-            background-color: #051005;
-            border: 1px solid #225522;
-            padding: 4px 8px;
-            font-size: 14px;
-            text-align: center;
-            min-height: 20px;
-            color: #33ff33;
-            text-shadow: 0 0 3px #33ff33;
-            opacity: 0.8;
-            letter-spacing: 1px;
-        }
-
         .notes-display {
             background-color: #051005;
             border: 1px solid #225522;
@@ -126,6 +134,22 @@
             font-size: 20px;
             text-align: center;
             min-height: 30px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .score-container {
+            background-color: #020502;
+            border: 1px solid #225522;
+            padding: 4px;
+            display: flex;
+            justify-content: center;
+        }
+
+        #scoreCanvas {
+            background-color: #fff;
+            border: 1px solid #000;
         }
 
         #status-led {
@@ -141,17 +165,6 @@
             background-color: #33ff33;
             box-shadow: 0 0 10px #33ff33;
         }
-
-        pre {
-            background-color: #051005;
-            border: 1px solid #225522;
-            padding: 8px;
-            height: 50px;
-            overflow-y: auto;
-            white-space: pre-wrap;
-            margin: 0;
-            font-size: 14px;
-        }
     </style>
 </head>
 <body>
@@ -165,53 +178,61 @@
 
         <div class="control-group">
             <div class="checkbox-row">
-                <input type="checkbox" id="preferFlats" checked>
-                <label for="preferFlats">PREFER FLATS (♭)</label>
+                <div class="checkbox-item">
+                    <input type="checkbox" id="preferFlats" checked>
+                    <label for="preferFlats">PREFER FLATS (♭)</label>
+                </div>
+                <div class="checkbox-item">
+                    <input type="checkbox" id="octaveShift">
+                    <label for="octaveShift">OCTAVE +1</label>
+                </div>
             </div>
         </div>
 
-        <div class="chord-display" id="chordName"></div>
-        <div class="alt-display" id="altChords"></div>
+        <!-- Score schmal und zentriert -->
+        <div class="score-container">
+            <canvas id="scoreCanvas" width="170" height="300"></canvas>
+        </div>
+
+        <!-- Zweizeilige Akkordanzeige mit fixer Höhe -->
+        <div class="chord-display" id="chordDisplay">
+            <div class="chord-main" id="chordMain"></div>
+            <div class="chord-alt" id="chordAlt"></div>
+        </div>
 
         <div class="notes-display" id="notesList">no notes</div>
-
-        <pre id="terminal">System ready.</pre>
     </div>
 
     <script>
+        const { Renderer, Stave, StaveNote, Accidental, Formatter, StaveConnector } = Vex.Flow;
+
         let midiAccess = null;
         let selectedInput = null;
         let activeNotes = new Map();
 
-        const chordDisplay = document.getElementById('chordName');
-        const altDisplay = document.getElementById('altChords');
+        const chordDisplay = document.getElementById('chordDisplay');
+        const chordMain = document.getElementById('chordMain');
+        const chordAlt = document.getElementById('chordAlt');
         const notesDisplay = document.getElementById('notesList');
-        const terminal = document.getElementById('terminal');
         const statusLed = document.getElementById('status-led');
         const preferFlatsCheckbox = document.getElementById('preferFlats');
+        const octaveShiftCheckbox = document.getElementById('octaveShift');
+
+        const canvas = document.getElementById('scoreCanvas');
+        const renderer = new Renderer(canvas, Renderer.Backends.CANVAS);
+        const ctx = renderer.getContext();
+        ctx.setFont('Arial', 10, '');
 
         let debounceTimer = null;
 
+        const STORAGE_KEY = 'selectedMidiInputName';
+
         const PITCH_CLASSES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 
-        // Enharmonisches Mapping # → ♭
         const FLAT_MAP = {
-            'C#': 'D♭',
-            'D#': 'E♭',
-            'F#': 'G♭',
-            'G#': 'A♭',
-            'A#': 'B♭',
-            // Auch die mit ASCII b oder Symbol
-            'C♯': 'D♭',
-            'D♯': 'E♭',
-            'F♯': 'G♭',
-            'G♯': 'A♭',
-            'A♯': 'B♭',
-            'Db': 'D♭',
-            'Eb': 'E♭',
-            'Gb': 'G♭',
-            'Ab': 'A♭',
-            'Bb': 'B♭'
+            'C#': 'D♭', 'D#': 'E♭', 'F#': 'G♭', 'G#': 'A♭', 'A#': 'B♭',
+            'C♯': 'D♭', 'D♯': 'E♭', 'F♯': 'G♭', 'G♯': 'A♭', 'A♯': 'B♭',
+            'Db': 'D♭', 'Eb': 'E♭', 'Gb': 'G♭', 'Ab': 'A♭', 'Bb': 'B♭'
         };
 
         const CHORD_PATTERNS = [
@@ -247,24 +268,15 @@
             { name: '9sus4', intervals: [0, 2, 5, 7, 10] }
         ];
 
-        function logMsg(msg) {
-            terminal.textContent = msg + '\n' + terminal.textContent.split('\n').slice(0, 3).join('\n');
-        }
-
         function midiToPitchClass(number) {
             return PITCH_CLASSES[number % 12];
         }
 
         function pitchClassToNumber(pc) {
-            // Normalisiert auf C, C#... – entfernt ♭-Varianten
             const normalized = pc
-                .replace('♯', '#')
-                .replace('♭', 'b')
-                .replace('Db', 'C#')
-                .replace('Eb', 'D#')
-                .replace('Gb', 'F#')
-                .replace('Ab', 'G#')
-                .replace('Bb', 'A#');
+                .replace('♯', '#').replace('♭', 'b')
+                .replace('Db', 'C#').replace('Eb', 'D#').replace('Gb', 'F#')
+                .replace('Ab', 'G#').replace('Bb', 'A#');
             return PITCH_CLASSES.indexOf(normalized);
         }
 
@@ -274,59 +286,64 @@
             return pc + octave;
         }
 
-        // Wandelt eine einzelne Pitch-Klasse (z. B. 'C#') in Flat-Darstellung um, wenn Checkbox aktiv
-        function toFlat(pc) {
-            if (!preferFlatsCheckbox.checked) {
-                return pc.replace('#', '♯').replace('b', '♭');
+        function getOctaveShift() {
+            return octaveShiftCheckbox.checked ? 12 : 0;
+        }
+
+        function getShiftedMidiNotes() {
+            const shift = getOctaveShift();
+            return Array.from(activeNotes.keys()).map(n => n + shift).sort((a, b) => a - b);
+        }
+
+        function midiToVexNote(midi) {
+            const pitchClass = midi % 12;
+            const octave = Math.floor(midi / 12) - 1;
+            let note = PITCH_CLASSES[pitchClass];
+
+            if (preferFlatsCheckbox.checked) {
+                note = note.replace('#', '♯');
+                if (FLAT_MAP[note]) note = FLAT_MAP[note];
+                note = note.replace('♭', 'b');
+            } else {
+                note = note.replace('#', '#');
             }
-            // Erst ASCII ersetzen
+            return note + '/' + octave;
+        }
+
+        function toFlat(pc) {
+            if (!preferFlatsCheckbox.checked) return pc.replace('#', '♯').replace('b', '♭');
             let normal = pc.replace('#', '♯').replace('b', '♭');
-            // Dann Flat-Map anwenden
             return FLAT_MAP[normal] || normal;
         }
 
         function beautifyChord(raw) {
-            // Slash behandeln
             if (raw.includes('/')) {
                 const [chordPart, bassPart] = raw.split('/');
                 return beautifyChord(chordPart) + '/' + toFlat(bassPart);
             }
-
-            // Grundton und Suffix extrahieren
             const match = raw.match(/^([A-G][#♯♭b]?)(.*)/);
             if (!match) return raw;
-
             let root = match[1];
             const suffix = match[2];
-
-            // In Flat umwandeln wenn Checkbox aktiv
             if (preferFlatsCheckbox.checked) {
                 root = root.replace('#', '♯').replace('b', '♭');
                 root = FLAT_MAP[root] || root;
             } else {
                 root = root.replace('#', '♯').replace('b', '♭');
             }
-
-            // Suffix auch von ASCII befreien
             const cleanSuffix = suffix.replace('#', '♯').replace('b', '♭');
             return root + cleanSuffix;
         }
 
         function detectAllChords(midiNotes) {
             if (midiNotes.length < 3) return [];
-
             const seen = new Set();
             const uniquePCs = [];
             for (let i = 0; i < midiNotes.length; i++) {
                 const pc = midiToPitchClass(midiNotes[i]);
-                if (!seen.has(pc)) {
-                    seen.add(pc);
-                    uniquePCs.push(pc);
-                }
+                if (!seen.has(pc)) { seen.add(pc); uniquePCs.push(pc); }
             }
-
             const results = [];
-
             for (let rootPC of uniquePCs) {
                 const intervals = [0];
                 for (let pc of uniquePCs) {
@@ -336,7 +353,6 @@
                     if (diff > 0) intervals.push(diff);
                 }
                 intervals.sort((a, b) => a - b);
-
                 for (let pattern of CHORD_PATTERNS) {
                     if (pattern.intervals.length === intervals.length &&
                         pattern.intervals.every((v, i) => v === intervals[i])) {
@@ -345,18 +361,14 @@
                     }
                 }
             }
-
             return results;
         }
 
         function selectMainChord(allChords, midiNotes) {
             if (allChords.length === 0) return null;
-
             const bassPC = midiToPitchClass(midiNotes[0]);
             const first = allChords[0];
             const firstRoot = first.match(/^[A-G][#♯♭b]?/)[0];
-
-            // Vergleiche Pitch-Class-Nummern
             if (pitchClassToNumber(firstRoot) !== pitchClassToNumber(bassPC)) {
                 return first + '/' + bassPC;
             }
@@ -366,52 +378,125 @@
         function updateNotesDisplay() {
             if (activeNotes.size === 0) {
                 statusLed.classList.remove('active');
-                notesDisplay.textContent = 'no notes';
+                notesDisplay.textContent = '';
             } else {
                 statusLed.classList.add('active');
-                const midiNotes = Array.from(activeNotes.keys()).sort((a, b) => a - b);
+                const midiNotes = getShiftedMidiNotes();
                 const fullNotes = midiNotes.map(n => midiToFullNote(n));
                 notesDisplay.textContent = fullNotes.join('  ');
             }
         }
 
+        function drawScore() {
+            ctx.clear();
+            ctx.fillStyle = '#FFFFFF';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.fillStyle = '#000000';
+            ctx.strokeStyle = '#000000';
+
+            // Mehr Platz links, damit die Akkolade nicht abgeschnitten wird
+            const staveX = 18;
+            const staveWidth = canvas.width - staveX - 5;
+            const trebleY = 60;
+            const bassY = 140;
+
+            // Violinschlüssel
+            const staveTreble = new Stave(staveX, trebleY, staveWidth);
+            staveTreble.addClef('treble');
+            staveTreble.addKeySignature('C');
+            staveTreble.setContext(ctx);
+            staveTreble.draw();
+
+            // Bassschlüssel
+            const staveBass = new Stave(staveX, bassY, staveWidth);
+            staveBass.addClef('bass');
+            staveBass.addKeySignature('C');
+            staveBass.setContext(ctx);
+            staveBass.draw();
+
+            // Akkolade (geschweifte Klammer) – jetzt vollständig sichtbar
+            new StaveConnector(staveTreble, staveBass)
+                .setContext(ctx)
+                .setType(StaveConnector.type.BRACE)
+                .draw();
+
+            const midiNotes = getShiftedMidiNotes();
+            if (midiNotes.length === 0) return;
+
+            const trebleNotes = midiNotes.filter(n => n >= 60);
+            const bassNotes = midiNotes.filter(n => n < 60);
+
+            function createNote(keys, clef) {
+                const note = new StaveNote({
+                    keys,
+                    duration: 'w',
+                    clef: clef
+                });
+                note.setStyle({ fillStyle: '#000', strokeStyle: '#000' });
+
+                for (let i = 0; i < keys.length; i++) {
+                    const noteName = keys[i].split('/')[0];
+                    if (noteName.includes('b')) {
+                        note.addModifier(new Accidental('b'), i);
+                    } else if (noteName.includes('#')) {
+                        note.addModifier(new Accidental('#'), i);
+                    }
+                }
+                return note;
+            }
+
+            if (trebleNotes.length > 0) {
+                const keys = trebleNotes.map(n => midiToVexNote(n));
+                const note = createNote(keys, 'treble');
+                Formatter.FormatAndDraw(ctx, staveTreble, [note], {
+                    align_center: true,
+                    auto_beam: false
+                });
+            }
+
+            if (bassNotes.length > 0) {
+                const keys = bassNotes.map(n => midiToVexNote(n));
+                const note = createNote(keys, 'bass');
+                Formatter.FormatAndDraw(ctx, staveBass, [note], {
+                    align_center: true,
+                    auto_beam: false
+                });
+            }
+        }
+
         function evaluateChord() {
-            const midiNotes = Array.from(activeNotes.keys()).sort((a, b) => a - b);
+            const midiNotes = getShiftedMidiNotes();
             const all = detectAllChords(midiNotes);
             const mainRaw = selectMainChord(all, midiNotes);
 
             if (mainRaw) {
                 chordDisplay.classList.remove('fade-out');
                 chordDisplay.style.opacity = '1';
-                chordDisplay.textContent = beautifyChord(mainRaw);
-
                 const mainClean = beautifyChord(mainRaw);
+                chordMain.textContent = mainClean;
+
                 const others = all
                     .map(c => beautifyChord(c))
                     .filter(c => c !== mainClean && c !== mainRaw);
-                const uniqueOthers = [...new Set(others)];
-                altDisplay.textContent = uniqueOthers.length > 0 
-                    ? uniqueOthers.join('  |  ') 
-                    : '';
+                chordAlt.textContent = [...new Set(others)].join('  |  ') || '';
             } else {
-                if (chordDisplay.textContent !== '') {
+                if (chordMain.textContent !== '') {
                     if (!chordDisplay.classList.contains('fade-out')) {
                         chordDisplay.classList.add('fade-out');
                         const onAnimationEnd = () => {
-                            chordDisplay.textContent = '';
+                            chordMain.textContent = '';
+                            chordAlt.textContent = '';
                             chordDisplay.classList.remove('fade-out');
                             chordDisplay.style.opacity = '1';
-                            altDisplay.textContent = '';
                             chordDisplay.removeEventListener('animationend', onAnimationEnd);
                         };
                         chordDisplay.addEventListener('animationend', onAnimationEnd, { once: true });
-
                         setTimeout(() => {
                             if (chordDisplay.classList.contains('fade-out')) {
-                                chordDisplay.textContent = '';
+                                chordMain.textContent = '';
+                                chordAlt.textContent = '';
                                 chordDisplay.classList.remove('fade-out');
                                 chordDisplay.style.opacity = '1';
-                                altDisplay.textContent = '';
                             }
                         }, 1500);
                     }
@@ -423,6 +508,7 @@
             if (debounceTimer) clearTimeout(debounceTimer);
             debounceTimer = setTimeout(() => {
                 evaluateChord();
+                drawScore();
                 debounceTimer = null;
             }, 50);
         }
@@ -432,17 +518,39 @@
             scheduleEvaluation();
         }
 
-        // WebMIDI
-        if (navigator.requestMIDIAccess) {
-            navigator.requestMIDIAccess().then(onMIDISuccess, () => logMsg('?ERROR: MIDI ACCESS DENIED.'));
-        } else {
-            logMsg('?ERROR: WebMIDI not supported.');
-        }
+        // Checkbox-Listener
+        preferFlatsCheckbox.addEventListener('change', () => {
+            if (activeNotes.size > 0) {
+                drawScore();
+                evaluateChord();
+            }
+        });
 
-        function onMIDISuccess(access) {
-            midiAccess = access;
-            updatePorts();
-            midiAccess.onstatechange = updatePorts;
+        octaveShiftCheckbox.addEventListener('change', () => {
+            if (activeNotes.size > 0) {
+                handleMidiChange();
+            }
+        });
+
+        // MIDI-Auswahl mit localStorage
+        function saveSelectedInputName(name) {
+            localStorage.setItem(STORAGE_KEY, name);
+        }
+        function getStoredInputName() {
+            return localStorage.getItem(STORAGE_KEY);
+        }
+        function selectStoredInput() {
+            const storedName = getStoredInputName();
+            if (!storedName || !midiAccess) return;
+            for (let input of midiAccess.inputs.values()) {
+                if (input.name === storedName) {
+                    document.getElementById('midiInSelect').value = input.id;
+                    if (selectedInput) selectedInput.onmidimessage = null;
+                    selectedInput = input;
+                    selectedInput.onmidimessage = handleMIDIMessage;
+                    return;
+                }
+            }
         }
 
         function updatePorts() {
@@ -451,6 +559,7 @@
             for (let input of midiAccess.inputs.values()) {
                 inSel.innerHTML += `<option value="${input.id}">${input.name}</option>`;
             }
+            selectStoredInput();
         }
 
         document.getElementById('midiInSelect').addEventListener('change', e => {
@@ -458,22 +567,37 @@
             if (e.target.value) {
                 selectedInput = midiAccess.inputs.get(e.target.value);
                 selectedInput.onmidimessage = handleMIDIMessage;
-                logMsg(`> IN: ${selectedInput.name}`);
+                saveSelectedInputName(selectedInput.name);
+            } else {
+                selectedInput = null;
+                localStorage.removeItem(STORAGE_KEY);
             }
         });
+
+        // WebMIDI
+        if (navigator.requestMIDIAccess) {
+            navigator.requestMIDIAccess().then(onMIDISuccess, () => {});
+        }
+
+        function onMIDISuccess(access) {
+            midiAccess = access;
+            updatePorts();
+            midiAccess.onstatechange = updatePorts;
+        }
 
         function handleMIDIMessage(msg) {
             const [status, note, velocity] = msg.data;
             const cmd = status >> 4;
-
             if (cmd === 9 && velocity > 0) {
                 activeNotes.set(note, velocity);
             } else if (cmd === 8 || (cmd === 9 && velocity === 0)) {
                 activeNotes.delete(note);
             }
-
             handleMidiChange();
         }
+
+        // Leeres Notenblatt beim Start
+        drawScore();
     </script>
 </body>
 </html>
