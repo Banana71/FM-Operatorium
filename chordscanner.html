@@ -117,13 +117,15 @@
             line-height: 1.2;
         }
 
-        @keyframes fadeOut {
-            from { opacity: 1; }
-            to   { opacity: 0; }
+        /* Sanfte Transition für den Text – Dauer wird per JS dynamisch gesetzt */
+        .chord-main,
+        .chord-alt {
+            transition: opacity 1.5s ease;
         }
 
-        .chord-display.fade-out {
-            animation: fadeOut 1s forwards;
+        .chord-main.fading,
+        .chord-alt.fading {
+            opacity: 0;
         }
 
         .notes-display {
@@ -200,7 +202,7 @@
         </div>
 
         <div class="score-container">
-            <canvas id="scoreCanvas" width=350" height="300"></canvas>
+            <canvas id="scoreCanvas" width="350" height="300"></canvas>
             <div class="powered-by">Powered by VexFlow (MIT)</div>
         </div>
 
@@ -209,7 +211,7 @@
             <div class="chord-alt" id="chordAlt"></div>
         </div>
 
-        <div class="notes-display" id="notesList">no notes</div>
+        <div class="notes-display" id="notesList"></div>
     </div>
 
     <script>
@@ -218,6 +220,7 @@
         let midiAccess = null;
         let selectedInput = null;
         let activeNotes = new Map();
+        let sustainedNotes = new Set();   // Noten, die durch das Sustain-Pedal gehalten werden
 
         const chordDisplay = document.getElementById('chordDisplay');
         const chordMain = document.getElementById('chordMain');
@@ -277,7 +280,6 @@
             { name: '9sus4', intervals: [0, 2, 5, 7, 10] }
         ];
 
-        // Für Subset-Erkennung: Pattern nach Länge sortieren (kürzere zuerst)
         const SORTED_PATTERNS = [...CHORD_PATTERNS].sort((a, b) => a.intervals.length - b.intervals.length);
 
         function midiToPitchClass(number) {
@@ -302,6 +304,7 @@
             return octaveShiftCheckbox.checked ? 12 : 0;
         }
 
+        // Wichtig: NUR die tatsächlich gedrückten Tasten, nicht die Sustain-Noten
         function getShiftedMidiNotes() {
             const shift = getOctaveShift();
             return Array.from(activeNotes.keys()).map(n => n + shift).sort((a, b) => a - b);
@@ -356,7 +359,6 @@
                 if (!seen.has(pc)) { seen.add(pc); uniquePCs.push(pc); }
             }
 
-            // Phase 1: exakte Übereinstimmungen
             const exactResults = [];
             for (let rootPC of uniquePCs) {
                 const intervals = [0];
@@ -379,7 +381,6 @@
 
             if (exactResults.length > 0) return exactResults;
 
-            // Phase 2: Subset-Erkennung (weggelassene Töne, mindestens 3 gespielte Töne)
             const subsetResults = [];
             for (let rootPC of uniquePCs) {
                 const playedIntervals = [];
@@ -391,11 +392,10 @@
                 }
                 playedIntervals.sort((a, b) => a - b);
 
-                // Verwende sortierte Patterns (kürzeste zuerst), um C7 vor C9 zu bevorzugen
                 for (let pattern of SORTED_PATTERNS) {
                     if (playedIntervals.every(interval => pattern.intervals.includes(interval))) {
                         subsetResults.push(rootPC + pattern.name);
-                        break; // erstes (kürzestes) passendes Pattern für diese Root
+                        break;
                     }
                 }
             }
@@ -414,13 +414,15 @@
         }
 
         function updateNotesDisplay() {
-            if (activeNotes.size === 0) {
+            if (activeNotes.size === 0 && (!sustainActive || sustainedNotes.size === 0)) {
                 statusLed.classList.remove('active');
                 notesDisplay.textContent = '';
             } else {
                 statusLed.classList.add('active');
-                const midiNotes = getShiftedMidiNotes();
-                const fullNotes = midiNotes.map(n => midiToFullNote(n));
+                // Nur die echten aktiven Noten anzeigen (optional)
+                const shift = getOctaveShift();
+                const notes = Array.from(activeNotes.keys()).map(n => n + shift).sort((a, b) => a - b);
+                const fullNotes = notes.map(n => midiToFullNote(n));
                 notesDisplay.textContent = fullNotes.join('  ');
             }
         }
@@ -498,42 +500,121 @@
             }
         }
 
-function evaluateChord() {
+        // ---------- ERWEITERTE FADEOUT-STEUERUNG ----------
+        let sustainActive = false;
+        let sustainTimerActive = false;
+        let sustainTimer = null;
+        let longFadeInProgress = false;
+        let sustainOnlyMode = false;   // true, wenn nur Pedal hält, keine Tasten
+
+        function startSustainOnlyTimer() {
+            if (sustainTimerActive || longFadeInProgress) return;
+            sustainTimerActive = true;
+            sustainOnlyMode = true;
+            sustainTimer = setTimeout(() => {
+                sustainTimerActive = false;
+                sustainOnlyMode = false;
+                startLongFade();
+            }, 2000);
+        }
+
+        function cancelSustainOnlyTimer() {
+            if (sustainTimer) {
+                clearTimeout(sustainTimer);
+                sustainTimer = null;
+            }
+            sustainTimerActive = false;
+            sustainOnlyMode = false;
+        }
+
+        function startLongFade() {
+            if (longFadeInProgress) return;
+            longFadeInProgress = true;
+
+            // Lange Transition setzen (5s)
+            chordMain.style.transition = 'opacity 8s ease';
+            chordAlt.style.transition = 'opacity 8s ease';
+
+            chordMain.classList.add('fading');
+            chordAlt.classList.add('fading');
+
+            const onTransitionEnd = () => {
+                chordMain.textContent = '';
+                chordAlt.textContent = '';
+                chordMain.classList.remove('fading');
+                chordAlt.classList.remove('fading');
+                chordMain.style.transition = 'opacity 1.5s ease';
+                chordAlt.style.transition = 'opacity 1.5s ease';
+                longFadeInProgress = false;
+                chordMain.removeEventListener('transitionend', onTransitionEnd);
+            };
+
+            chordMain.addEventListener('transitionend', onTransitionEnd, { once: true });
+
+            setTimeout(() => {
+                if (longFadeInProgress) {
+                    onTransitionEnd();
+                }
+            }, 8500);
+        }
+
+        function evaluateChord() {
             const midiNotes = getShiftedMidiNotes();
-            const all = detectAllChords(midiNotes);
-            const mainRaw = selectMainChord(all, midiNotes);
 
-            if (mainRaw) {
-                chordDisplay.classList.remove('fade-out');
-                chordDisplay.style.opacity = '1';
-                const mainClean = beautifyChord(mainRaw);
-                chordMain.textContent = mainClean;
+            if (midiNotes.length > 0) {
+                // Echte Tasten vorhanden → alles zurücksetzen und Akkord anzeigen
+                cancelSustainOnlyTimer();
+                longFadeInProgress = false;
 
-                const others = all
-                    .map(c => beautifyChord(c))
-                    .filter(c => c !== mainClean && c !== mainRaw);
-                chordAlt.textContent = [...new Set(others)].join('  |  ') || '';
+                chordMain.classList.remove('fading');
+                chordAlt.classList.remove('fading');
+                chordMain.style.transition = 'opacity 1.5s ease';
+                chordAlt.style.transition = 'opacity 1.5s ease';
+
+                const all = detectAllChords(midiNotes);
+                const mainRaw = selectMainChord(all, midiNotes);
+
+                if (mainRaw) {
+                    const mainClean = beautifyChord(mainRaw);
+                    chordMain.textContent = mainClean;
+                    const others = all
+                        .map(c => beautifyChord(c))
+                        .filter(c => c !== mainClean && c !== mainRaw);
+                    chordAlt.textContent = [...new Set(others)].join('  |  ') || '';
+                } else {
+                    chordMain.textContent = '';
+                    chordAlt.textContent = '';
+                }
             } else {
+                // Keine Tasten
+                if (sustainOnlyMode || longFadeInProgress) {
+                    // Timer läuft oder langer Fade aktiv → Anzeige nicht ändern
+                    return;
+                }
+
+                // Normaler Fade (wenn Text vorhanden)
                 if (chordMain.textContent !== '') {
-                    if (!chordDisplay.classList.contains('fade-out')) {
-                        chordDisplay.classList.add('fade-out');
-                        const onAnimationEnd = () => {
-                            chordMain.textContent = '';
-                            chordAlt.textContent = '';
-                            chordDisplay.classList.remove('fade-out');
-                            chordDisplay.style.opacity = '1';
-                            chordDisplay.removeEventListener('animationend', onAnimationEnd);
-                        };
-                        chordDisplay.addEventListener('animationend', onAnimationEnd, { once: true });
-                        setTimeout(() => {
-                            if (chordDisplay.classList.contains('fade-out')) {
-                                chordMain.textContent = '';
-                                chordAlt.textContent = '';
-                                chordDisplay.classList.remove('fade-out');
-                                chordDisplay.style.opacity = '1';
-                            }
-                        }, 1500);
-                    }
+                    chordMain.style.transition = 'opacity 1.5s ease';
+                    chordAlt.style.transition = 'opacity 1.5s ease';
+
+                    chordMain.classList.add('fading');
+                    chordAlt.classList.add('fading');
+
+                    const onTransitionEnd = () => {
+                        chordMain.textContent = '';
+                        chordAlt.textContent = '';
+                        chordMain.classList.remove('fading');
+                        chordAlt.classList.remove('fading');
+                        chordMain.removeEventListener('transitionend', onTransitionEnd);
+                    };
+
+                    chordMain.addEventListener('transitionend', onTransitionEnd, { once: true });
+
+                    setTimeout(() => {
+                        if (chordMain.classList.contains('fading')) {
+                            onTransitionEnd();
+                        }
+                    }, 1600);
                 }
             }
         }
@@ -544,7 +625,7 @@ function evaluateChord() {
                 evaluateChord();
                 drawScore();
                 debounceTimer = null;
-            }, 50);
+            }, 80);
         }
 
         function handleMidiChange() {
@@ -619,11 +700,49 @@ function evaluateChord() {
         function handleMIDIMessage(msg) {
             const [status, note, velocity] = msg.data;
             const cmd = status >> 4;
+            const channel = status & 0x0F;
+
+            // Note On
             if (cmd === 9 && velocity > 0) {
                 activeNotes.set(note, velocity);
-            } else if (cmd === 8 || (cmd === 9 && velocity === 0)) {
-                activeNotes.delete(note);
+                sustainedNotes.delete(note);
+                // Neue Taste → Sustain-Only-Modus beenden
+                cancelSustainOnlyTimer();
             }
+            // Note Off
+            else if (cmd === 8 || (cmd === 9 && velocity === 0)) {
+                if (sustainActive) {
+                    sustainedNotes.add(note);
+                    activeNotes.delete(note);
+                    if (activeNotes.size === 0) {
+                        // Nur noch Sustain → Timer starten
+                        startSustainOnlyTimer();
+                    }
+                } else {
+                    activeNotes.delete(note);
+                }
+            }
+            // Controller
+            else if (cmd === 11) {
+                if (note === 64) {
+                    if (velocity >= 64) {
+                        sustainActive = true;
+                    } else {
+                        sustainActive = false;
+                        // Pedal losgelassen → Noten freigeben und Timer abbrechen
+                        for (let n of sustainedNotes) {
+                            activeNotes.delete(n);
+                        }
+                        sustainedNotes.clear();
+                        cancelSustainOnlyTimer();
+                        // Wenn jetzt wirklich nichts mehr klingt → normaler Fade
+                        if (activeNotes.size === 0) {
+                            handleMidiChange();
+                        }
+                    }
+                }
+            }
+
             handleMidiChange();
         }
 
