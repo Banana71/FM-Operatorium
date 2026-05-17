@@ -8,8 +8,8 @@
     <script src="https://w.soundcloud.com/player/api.js"></script>
     <style>
         :root {
-            --p-color: #33ff33;
-            --bg-color: #050a05;
+            --p-color: #30a398;
+            --bg-color: #221D16;
             --window-bg: #000000;
             --font-stack: 'VT323', monospace;
         }
@@ -61,7 +61,7 @@
             font-size: 22px;
             font-weight: bold;
             text-transform: uppercase;
-            box-shadow: 0 2px 10px rgba(51, 255, 51, 0.4);
+            box-shadow: 0 2px 10px rgba(51, 255, 221, 0.4);
             z-index: 10000;
             position: relative;
         }
@@ -98,7 +98,7 @@
         }
 
         .icon:hover {
-            background-color: rgba(51, 255, 51, 0.2);
+            background-color: rgba(51, 255, 221, 0.2);
             border: 1px dashed var(--p-color);
         }
 
@@ -111,12 +111,12 @@
         .icon-label {
             font-size: 18px;
             text-transform: uppercase;
-            color: #33ff33;
+            color: #48E0D0;
             text-shadow:
-                0 0 2px #33ff33,
-                0 0 5px #33ff33,
-                0 0 10px #33ff33,
-                0 0 20px #00ff99;
+                0 0 2px #50E0D0,
+                0 0 5px #70E0D0,
+                0 0 10px #90E0D0,
+                0 0 20px #c0E0D0;
             background-color: rgba(0,0,0,0.6);
             padding: 2px 4px;
             display: inline-block;
@@ -128,7 +128,7 @@
             height: 700px;
             background-color: var(--window-bg);
             border: 2px solid var(--p-color);
-            box-shadow: 5px 5px 0px rgba(51, 255, 51, 0.2), 0 0 15px rgba(51, 255, 51, 0.5);
+            box-shadow: 5px 5px 0px rgba(51, 255, 221, 0.4), 0 0 15px rgba(51, 255, 221, 0.2);
             display: flex;
             flex-direction: column;
             z-index: 100;
@@ -136,7 +136,7 @@
 
         .window-header {
             background-color: var(--p-color);
-            color: var(--window-bg);
+            color: #90e0d0;
             padding: 5px 10px;
             font-size: 20px;
             display: flex;
@@ -147,9 +147,9 @@
         }
 
         .close-btn {
-            background: var(--window-bg);
-            color: var(--p-color);
-            border: 1px solid var(--window-bg);
+            background: var(--p-color);
+            color: #90E0D0;
+            border: 1px solid #90e0d0;
             cursor: pointer;
             font-family: var(--font-stack);
             font-size: 18px;
@@ -158,8 +158,8 @@
         }
 
         .close-btn:hover {
-            background: #ff3333;
-            color: #000;
+            background: #58fff1;
+            color: #f59300;
         }
 
         .window-content {
@@ -230,6 +230,12 @@
             border-radius: 50%; 
         }
 
+        .icon-row {
+            display: flex;
+            flex-direction: row;
+            gap: 10px;          /* Abstand zwischen den Icons */
+        }
+
     </style>
 </head>
 <body>
@@ -240,14 +246,30 @@
     </div>
 
     <div class="desktop-dock left">
+        <!-- Erste Zeile: zwei Icons nebeneinander -->
+        <div class="icon-row">
+            <!-- Soundplantage (neues Icon, falls noch nicht vorhanden) -->
+            <div class="icon" onclick="window.open('https://github.com/Banana71/Soundplantage', '_blank')">
+                <div class="icon-art">🎶</div>
+                <div class="icon-label">DreamDexed Performance</div>
+            </div>
+
+            <!-- PERFLIST (bestehendes Icon) -->
+            <div class="icon" onclick="openWindow('perflist', 'PERFLIST DOKU', 'https://cdn.jsdelivr.net/gh/Banana71/Soundplantage@main/Performance%20List.pdf', '880px', '740px')">
+                <div class="icon-art">📋</div>
+                <div class="icon-label">PERFLIST.PDF</div>
+            </div>
+                    <!-- Chord Scanner -->
+            <div class="icon" onclick="openWindow('chordscanner', 'CHORD SCANNER', 'chordscanner.html', '400px', '700px')">
+                <div class="icon-art">🎵</div>
+                <div class="icon-label">CHORD SCAN</div>
+            </div>
+        </div>
+
+        <!-- Zweite Zeile und folgende: untereinander -->
         <div class="icon" onclick="openWindow('dx7-sheet', 'DX7 DATA SHEET', 'operatorium.html')">
             <div class="icon-art">📄</div>
             <div class="icon-label">DX7 SHEET</div>
-        </div>
-        
-        <div class="icon" onclick="openWindow('perflist', 'PERFLIST DOKU', 'https://cdn.jsdelivr.net/gh/Banana71/Soundplantage@main/Performance%20List.pdf', '880px', '740px')">
-            <div class="icon-art">📋</div>
-            <div class="icon-label">PERFLIST</div>
         </div>
 
         <div class="icon" onclick="openWindow('radio', 'SYNTHWAVE RADIO', 'https://synthwaveradio.eu', '500px', '680px')">
@@ -255,11 +277,10 @@
             <div class="icon-label">RADIO</div>
         </div>
 
-        <div class="icon" onclick="openWindow('soundcloud', 'MINIDEXED-DEMO', 'https://w.soundcloud.com/player/?url=https%3A//soundcloud.com/soundplantage/sets/minidexed2&color=%2333ff33&auto_play=false&hide_related=true&show_comments=false&show_user=true&show_reposts=false&visual=false', '440px', '700px')">
-            <div class="icon-art">🎹</div>
+       <div class="icon" onclick="openWindow('soundcloud', 'MINIDEXED-DEMO', 'https://w.soundcloud.com/player/?url=https%3A//soundcloud.com/soundplantage/sets/minidexed2&color=%2370e0d0&auto_play=false&hide_related=true&show_comments=false&show_user=true&show_reposts=false&visual=false', '440px', '700px')">            <div class="icon-art">🎹</div>
             <div class="icon-label">MINIDEXED-DEMO</div>
         </div>
-    </div>
+ </div>
 
     <div class="desktop-dock right">
         <div class="icon" onclick="window.open('https://github.com/probonopd/MiniDexed', '_blank')">
@@ -281,12 +302,6 @@
         <div class="icon" onclick="openWindow('campanile', 'CAMPANILE.SYS', 'campanile.html', '500px', '800px')">
             <div class="icon-art">🔔</div>
             <div class="icon-label">CAMPANILE</div>
-        </div>
-
-        <!-- NEU: Chord Scanner -->
-        <div class="icon" onclick="openWindow('chordscanner', 'CHORD SCANNER', 'chordscanner.html', '400px', '700px')">
-            <div class="icon-art">🎵</div>
-            <div class="icon-label">CHORD SCAN</div>
         </div>
 
         <div class="icon" onclick="openWindow('pacman', 'PAC-MAN.EXE', 'https://freepacman.org', '700px', '720px')">

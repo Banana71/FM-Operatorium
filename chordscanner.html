@@ -8,8 +8,8 @@
     <script src="https://cdn.jsdelivr.net/npm/vexflow@4.2.2/build/cjs/vexflow.min.js"></script>
     <style>
         :root {
-            --p-color: #33ff33;
-            --bg-color: #000000;
+            --p-color: #70E0D0;
+            --bg-color: #221d16;
             --font-stack: 'VT323', monospace;
         }
 
@@ -30,7 +30,7 @@
             margin: 0 auto;
             border: 2px solid var(--p-color);
             padding: 10px;
-            box-shadow: 0 0 10px rgba(51, 255, 51, 0.3);
+            box-shadow: 0 0 10px rgba(117, 255, 237, 0.623);
             display: flex;
             flex-direction: column;
             gap: 10px;
@@ -59,7 +59,7 @@
 
         select, input[type="checkbox"] {
             width: 100%;
-            background-color: #0a1a0a;
+            background-color: var(--bg-color);
             color: var(--p-color);
             border: 1px solid var(--p-color);
             font-family: var(--font-stack);
@@ -87,7 +87,6 @@
             margin: 0;
         }
 
-        /* Akkord-Display – fixe Höhe, zweizeilig */
         .chord-display {
             background-color: #200000;
             color: #ff3333;
@@ -101,7 +100,7 @@
             display: flex;
             flex-direction: column;
             justify-content: center;
-            height: 90px;                /* fixe Höhe */
+            height: 90px;
             box-sizing: border-box;
         }
 
@@ -114,7 +113,7 @@
         .chord-alt {
             font-size: 16px;
             opacity: 0.9;
-            min-height: 20px;            /* reserviert Platz, auch wenn leer */
+            min-height: 20px;
             line-height: 1.2;
         }
 
@@ -129,7 +128,7 @@
 
         .notes-display {
             background-color: #051005;
-            border: 1px solid #225522;
+            border: 1px solid #30d0c0;
             padding: 8px;
             font-size: 20px;
             text-align: center;
@@ -140,11 +139,22 @@
         }
 
         .score-container {
-            background-color: #020502;
-            border: 1px solid #225522;
+            background-color: var(--bg-color);
+            border: 1px solid #30d0c0;
             padding: 4px;
             display: flex;
+            flex-direction: column;
             justify-content: center;
+            align-items: center;
+        }
+
+        .powered-by {
+            font-family: var(--font-stack);
+            font-size: 12px;
+            color: var(--p-color);
+            opacity: 0.6;
+            margin-top: 4px;
+            text-shadow: 0 0 2px var(--p-color);
         }
 
         #scoreCanvas {
@@ -157,13 +167,13 @@
             width: 12px;
             height: 12px;
             border-radius: 50%;
-            background-color: #113311;
+            background-color: #3d0000;
             margin-right: 8px;
         }
 
         #status-led.active {
-            background-color: #33ff33;
-            box-shadow: 0 0 10px #33ff33;
+            background-color: #ff3535;
+            box-shadow: 0 0 10px #f35858;
         }
     </style>
 </head>
@@ -189,12 +199,11 @@
             </div>
         </div>
 
-        <!-- Score schmal und zentriert -->
         <div class="score-container">
-            <canvas id="scoreCanvas" width="170" height="300"></canvas>
+            <canvas id="scoreCanvas" width=350" height="300"></canvas>
+            <div class="powered-by">Powered by VexFlow (MIT)</div>
         </div>
 
-        <!-- Zweizeilige Akkordanzeige mit fixer Höhe -->
         <div class="chord-display" id="chordDisplay">
             <div class="chord-main" id="chordMain"></div>
             <div class="chord-alt" id="chordAlt"></div>
@@ -267,6 +276,9 @@
             { name: 'm6/9', intervals: [0, 2, 3, 7, 9] },
             { name: '9sus4', intervals: [0, 2, 5, 7, 10] }
         ];
+
+        // Für Subset-Erkennung: Pattern nach Länge sortieren (kürzere zuerst)
+        const SORTED_PATTERNS = [...CHORD_PATTERNS].sort((a, b) => a.intervals.length - b.intervals.length);
 
         function midiToPitchClass(number) {
             return PITCH_CLASSES[number % 12];
@@ -343,7 +355,9 @@
                 const pc = midiToPitchClass(midiNotes[i]);
                 if (!seen.has(pc)) { seen.add(pc); uniquePCs.push(pc); }
             }
-            const results = [];
+
+            // Phase 1: exakte Übereinstimmungen
+            const exactResults = [];
             for (let rootPC of uniquePCs) {
                 const intervals = [0];
                 for (let pc of uniquePCs) {
@@ -353,15 +367,39 @@
                     if (diff > 0) intervals.push(diff);
                 }
                 intervals.sort((a, b) => a - b);
+
                 for (let pattern of CHORD_PATTERNS) {
                     if (pattern.intervals.length === intervals.length &&
                         pattern.intervals.every((v, i) => v === intervals[i])) {
-                        results.push(rootPC + pattern.name);
+                        exactResults.push(rootPC + pattern.name);
                         break;
                     }
                 }
             }
-            return results;
+
+            if (exactResults.length > 0) return exactResults;
+
+            // Phase 2: Subset-Erkennung (weggelassene Töne, mindestens 3 gespielte Töne)
+            const subsetResults = [];
+            for (let rootPC of uniquePCs) {
+                const playedIntervals = [];
+                for (let pc of uniquePCs) {
+                    if (pc === rootPC) continue;
+                    let diff = pitchClassToNumber(pc) - pitchClassToNumber(rootPC);
+                    if (diff < 0) diff += 12;
+                    if (diff > 0) playedIntervals.push(diff);
+                }
+                playedIntervals.sort((a, b) => a - b);
+
+                // Verwende sortierte Patterns (kürzeste zuerst), um C7 vor C9 zu bevorzugen
+                for (let pattern of SORTED_PATTERNS) {
+                    if (playedIntervals.every(interval => pattern.intervals.includes(interval))) {
+                        subsetResults.push(rootPC + pattern.name);
+                        break; // erstes (kürzestes) passendes Pattern für diese Root
+                    }
+                }
+            }
+            return subsetResults;
         }
 
         function selectMainChord(allChords, midiNotes) {
@@ -394,27 +432,23 @@
             ctx.fillStyle = '#000000';
             ctx.strokeStyle = '#000000';
 
-            // Mehr Platz links, damit die Akkolade nicht abgeschnitten wird
-            const staveX = 18;
-            const staveWidth = canvas.width - staveX - 5;
+            const staveX = 104;
+            const staveWidth = 2 * (canvas.width / 2 - staveX);
             const trebleY = 60;
             const bassY = 140;
 
-            // Violinschlüssel
             const staveTreble = new Stave(staveX, trebleY, staveWidth);
             staveTreble.addClef('treble');
             staveTreble.addKeySignature('C');
             staveTreble.setContext(ctx);
             staveTreble.draw();
 
-            // Bassschlüssel
             const staveBass = new Stave(staveX, bassY, staveWidth);
             staveBass.addClef('bass');
             staveBass.addKeySignature('C');
             staveBass.setContext(ctx);
             staveBass.draw();
 
-            // Akkolade (geschweifte Klammer) – jetzt vollständig sichtbar
             new StaveConnector(staveTreble, staveBass)
                 .setContext(ctx)
                 .setType(StaveConnector.type.BRACE)
@@ -464,7 +498,7 @@
             }
         }
 
-        function evaluateChord() {
+function evaluateChord() {
             const midiNotes = getShiftedMidiNotes();
             const all = detectAllChords(midiNotes);
             const mainRaw = selectMainChord(all, midiNotes);
@@ -518,7 +552,6 @@
             scheduleEvaluation();
         }
 
-        // Checkbox-Listener
         preferFlatsCheckbox.addEventListener('change', () => {
             if (activeNotes.size > 0) {
                 drawScore();
@@ -532,7 +565,6 @@
             }
         });
 
-        // MIDI-Auswahl mit localStorage
         function saveSelectedInputName(name) {
             localStorage.setItem(STORAGE_KEY, name);
         }
@@ -574,7 +606,6 @@
             }
         });
 
-        // WebMIDI
         if (navigator.requestMIDIAccess) {
             navigator.requestMIDIAccess().then(onMIDISuccess, () => {});
         }
@@ -596,7 +627,6 @@
             handleMidiChange();
         }
 
-        // Leeres Notenblatt beim Start
         drawScore();
     </script>
 </body>
