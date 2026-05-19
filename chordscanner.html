@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>FM-Operatorium - Chord Scanner</title>
+    <title>FM-Operatorium - Chord Scanner (optimiert)</title>
     <link href="https://fonts.googleapis.com/css2?family=VT323&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/vexflow@4.2.2/build/cjs/vexflow.min.js"></script>
     <style>
@@ -117,7 +117,6 @@
             line-height: 1.2;
         }
 
-        /* Sanfte Transition für den Text – Dauer wird per JS dynamisch gesetzt */
         .chord-main,
         .chord-alt {
             transition: opacity 1.5s ease;
@@ -220,7 +219,7 @@
         let midiAccess = null;
         let selectedInput = null;
         let activeNotes = new Map();
-        let sustainedNotes = new Set();   // Noten, die durch das Sustain-Pedal gehalten werden
+        let sustainedNotes = new Set();
 
         const chordDisplay = document.getElementById('chordDisplay');
         const chordMain = document.getElementById('chordMain');
@@ -235,7 +234,10 @@
         const ctx = renderer.getContext();
         ctx.setFont('Arial', 10, '');
 
-        let debounceTimer = null;
+        // ---------- OPTIMIERUNG: Cache & Animation-Frame-Steuerung ----------
+        let lastDrawnKey = '';
+        let drawRequested = false;
+        let debounceTimer = null;       // nur für Akkordtext
 
         const STORAGE_KEY = 'selectedMidiInputName';
 
@@ -304,7 +306,6 @@
             return octaveShiftCheckbox.checked ? 12 : 0;
         }
 
-        // Wichtig: NUR die tatsächlich gedrückten Tasten, nicht die Sustain-Noten
         function getShiftedMidiNotes() {
             const shift = getOctaveShift();
             return Array.from(activeNotes.keys()).map(n => n + shift).sort((a, b) => a - b);
@@ -351,13 +352,8 @@
         }
 
         function detectAllChords(midiNotes) {
-            if (midiNotes.length < 3) return [];
-            const seen = new Set();
-            const uniquePCs = [];
-            for (let i = 0; i < midiNotes.length; i++) {
-                const pc = midiToPitchClass(midiNotes[i]);
-                if (!seen.has(pc)) { seen.add(pc); uniquePCs.push(pc); }
-            }
+            const uniquePCs = [...new Set(midiNotes.map(midiToPitchClass))];
+            if (uniquePCs.length < 3) return [];
 
             const exactResults = [];
             for (let rootPC of uniquePCs) {
@@ -419,7 +415,6 @@
                 notesDisplay.textContent = '';
             } else {
                 statusLed.classList.add('active');
-                // Nur die echten aktiven Noten anzeigen (optional)
                 const shift = getOctaveShift();
                 const notes = Array.from(activeNotes.keys()).map(n => n + shift).sort((a, b) => a - b);
                 const fullNotes = notes.map(n => midiToFullNote(n));
@@ -427,8 +422,19 @@
             }
         }
 
+        // ---------- OPTIMIERTE DRAW-FUNKTION MIT CACHE ----------
         function drawScore() {
-            ctx.clear();
+            const midiNotes = getShiftedMidiNotes();
+            const preferFlats = preferFlatsCheckbox.checked;
+
+            const currentKey = midiNotes.join(',') + '|' + (preferFlats ? 'b' : '#');
+
+            if (currentKey === lastDrawnKey) {
+                return;
+            }
+            lastDrawnKey = currentKey;
+
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
             ctx.fillStyle = '#FFFFFF';
             ctx.fillRect(0, 0, canvas.width, canvas.height);
             ctx.fillStyle = '#000000';
@@ -456,7 +462,6 @@
                 .setType(StaveConnector.type.BRACE)
                 .draw();
 
-            const midiNotes = getShiftedMidiNotes();
             if (midiNotes.length === 0) return;
 
             const trebleNotes = midiNotes.filter(n => n >= 60);
@@ -500,12 +505,12 @@
             }
         }
 
-        // ---------- ERWEITERTE FADEOUT-STEUERUNG ----------
+        // ---------- ERWEITERTE FADEOUT-STEUERUNG (original) ----------
         let sustainActive = false;
         let sustainTimerActive = false;
         let sustainTimer = null;
         let longFadeInProgress = false;
-        let sustainOnlyMode = false;   // true, wenn nur Pedal hält, keine Tasten
+        let sustainOnlyMode = false;
 
         function startSustainOnlyTimer() {
             if (sustainTimerActive || longFadeInProgress) return;
@@ -515,7 +520,7 @@
                 sustainTimerActive = false;
                 sustainOnlyMode = false;
                 startLongFade();
-            }, 2000);
+            }, 500);
         }
 
         function cancelSustainOnlyTimer() {
@@ -531,7 +536,6 @@
             if (longFadeInProgress) return;
             longFadeInProgress = true;
 
-            // Lange Transition setzen (5s)
             chordMain.style.transition = 'opacity 8s ease';
             chordAlt.style.transition = 'opacity 8s ease';
 
@@ -562,7 +566,6 @@
             const midiNotes = getShiftedMidiNotes();
 
             if (midiNotes.length > 0) {
-                // Echte Tasten vorhanden → alles zurücksetzen und Akkord anzeigen
                 cancelSustainOnlyTimer();
                 longFadeInProgress = false;
 
@@ -586,13 +589,10 @@
                     chordAlt.textContent = '';
                 }
             } else {
-                // Keine Tasten
                 if (sustainOnlyMode || longFadeInProgress) {
-                    // Timer läuft oder langer Fade aktiv → Anzeige nicht ändern
                     return;
                 }
 
-                // Normaler Fade (wenn Text vorhanden)
                 if (chordMain.textContent !== '') {
                     chordMain.style.transition = 'opacity 1.5s ease';
                     chordAlt.style.transition = 'opacity 1.5s ease';
@@ -619,33 +619,47 @@
             }
         }
 
-        function scheduleEvaluation() {
+        // ---------- NEUE PLANUNGSLOGIK FÜR DAS ZEICHNEN ----------
+        function requestDraw() {
+            if (!drawRequested) {
+                drawRequested = true;
+                requestAnimationFrame(() => {
+                    drawRequested = false;
+                    drawScore();
+                });
+            }
+        }
+
+        // ---------- HANDLE MIDI CHANGE: sofortige Noten, verzögerter Akkord ----------
+        function handleMidiChange() {
+            // Notenliste und Zeichnung sofort aktualisieren
+            updateNotesDisplay();
+            requestDraw();   // asynchron, aber ohne künstliche Verzögerung
+
+            // Akkordtext-Debounce (80 ms)
             if (debounceTimer) clearTimeout(debounceTimer);
             debounceTimer = setTimeout(() => {
                 evaluateChord();
-                drawScore();
                 debounceTimer = null;
             }, 80);
         }
 
-        function handleMidiChange() {
-            updateNotesDisplay();
-            scheduleEvaluation();
-        }
-
+        // Checkbox-Listener (Noten sofort, Akkord mit Debounce)
         preferFlatsCheckbox.addEventListener('change', () => {
+            lastDrawnKey = '';   // Cache zurücksetzen für neue Vorzeichen
             if (activeNotes.size > 0) {
-                drawScore();
-                evaluateChord();
+                handleMidiChange();  // zeichnet sofort, startet Akkord-Debounce
             }
         });
 
         octaveShiftCheckbox.addEventListener('change', () => {
+            lastDrawnKey = '';
             if (activeNotes.size > 0) {
                 handleMidiChange();
             }
         });
 
+        // MIDI-Setup (unverändert)
         function saveSelectedInputName(name) {
             localStorage.setItem(STORAGE_KEY, name);
         }
@@ -702,40 +716,33 @@
             const cmd = status >> 4;
             const channel = status & 0x0F;
 
-            // Note On
             if (cmd === 9 && velocity > 0) {
                 activeNotes.set(note, velocity);
                 sustainedNotes.delete(note);
-                // Neue Taste → Sustain-Only-Modus beenden
                 cancelSustainOnlyTimer();
             }
-            // Note Off
             else if (cmd === 8 || (cmd === 9 && velocity === 0)) {
                 if (sustainActive) {
                     sustainedNotes.add(note);
                     activeNotes.delete(note);
                     if (activeNotes.size === 0) {
-                        // Nur noch Sustain → Timer starten
                         startSustainOnlyTimer();
                     }
                 } else {
                     activeNotes.delete(note);
                 }
             }
-            // Controller
             else if (cmd === 11) {
                 if (note === 64) {
                     if (velocity >= 64) {
                         sustainActive = true;
                     } else {
                         sustainActive = false;
-                        // Pedal losgelassen → Noten freigeben und Timer abbrechen
                         for (let n of sustainedNotes) {
                             activeNotes.delete(n);
                         }
                         sustainedNotes.clear();
                         cancelSustainOnlyTimer();
-                        // Wenn jetzt wirklich nichts mehr klingt → normaler Fade
                         if (activeNotes.size === 0) {
                             handleMidiChange();
                         }
@@ -746,6 +753,7 @@
             handleMidiChange();
         }
 
+        // Initial leere Notenzeilen zeichnen
         drawScore();
     </script>
 </body>
