@@ -94,12 +94,26 @@
             cursor: pointer;
             padding: 10px;
             border: 1px solid transparent;
-            transition: all 0.2s;
+            transition: all 0.3s;
+        }
+
+        .icon:hover .icon-art {
+            text-shadow:
+                0 0 15px var(--p-color),
+                0 0 30px var(--p-color),
+                0 0 45px #90E0D0;
+        }
+
+        .icon:hover .icon-label {
+            text-shadow:
+                0 0 10px #70E0D0,
+                0 0 20px #90E0D0,
+                0 0 30px #c0E0D0;
         }
 
         .icon:hover {
-            background-color: rgba(51, 255, 221, 0.2);
-            border: 1px dashed var(--p-color);
+            background-color: transparent;
+            border: 1px solid transparent;
         }
 
         .icon-art {
@@ -113,10 +127,8 @@
             text-transform: uppercase;
             color: #48E0D0;
             text-shadow:
-                0 0 2px #50E0D0,
                 0 0 5px #70E0D0,
-                0 0 10px #90E0D0,
-                0 0 20px #c0E0D0;
+                0 0 15px #90E0D0;          /* 2 statt 4 Lagen */
             background-color: rgba(0,0,0,0.6);
             padding: 2px 4px;
             display: inline-block;
