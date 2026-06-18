@@ -1,0 +1,760 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FM-Operatorium - Chord Scanner (optimiert)</title>
+    <link href="https://fonts.googleapis.com/css2?family=VT323&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/vexflow@4.2.2/build/cjs/vexflow.min.js"></script>
+    <style>
+        :root {
+            --p-color: #70E0D0;
+            --bg-color: #221d16;
+            --font-stack: 'VT323', monospace;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--p-color);
+            font-family: var(--font-stack);
+            font-size: 18px;
+            margin: 0;
+            padding: 10px;
+            text-shadow: 0 0 5px var(--p-color);
+            overflow-x: hidden;
+            overflow-y: auto;
+        }
+
+        .container {
+            max-width: 356px;
+            margin: 0 auto;
+            border: 2px solid var(--p-color);
+            padding: 10px;
+            box-shadow: 0 0 10px rgba(117, 255, 237, 0.623);
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        h1 {
+            text-transform: uppercase;
+            font-size: 20px;
+            border-bottom: 1px dashed var(--p-color);
+            padding-bottom: 5px;
+            margin: 0;
+            display: flex;
+            align-items: center;
+        }
+
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+
+        label {
+            text-transform: uppercase;
+            font-size: 16px;
+        }
+
+        select, input[type="checkbox"] {
+            width: 100%;
+            background-color: var(--bg-color);
+            color: var(--p-color);
+            border: 1px solid var(--p-color);
+            font-family: var(--font-stack);
+            font-size: 18px;
+            padding: 5px;
+            box-sizing: border-box;
+        }
+
+        .checkbox-row {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+            flex-wrap: wrap;
+        }
+
+        .checkbox-item {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .checkbox-item input[type="checkbox"] {
+            width: auto;
+            height: 18px;
+            margin: 0;
+        }
+
+        .chord-display {
+            background-color: #200000;
+            color: #ff3333;
+            border: 2px inset #500000;
+            border-radius: 4px;
+            padding: 8px;
+            text-align: center;
+            text-shadow: 0 0 15px #ff0000;
+            box-shadow: inset 0 0 10px #000;
+            letter-spacing: 3px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            height: 90px;
+            box-sizing: border-box;
+        }
+
+        .chord-main {
+            font-size: 34px;
+            font-weight: bold;
+            line-height: 1.2;
+        }
+
+        .chord-alt {
+            font-size: 16px;
+            opacity: 0.9;
+            min-height: 20px;
+            line-height: 1.2;
+        }
+
+        .chord-main,
+        .chord-alt {
+            transition: opacity 1.5s ease;
+        }
+
+        .chord-main.fading,
+        .chord-alt.fading {
+            opacity: 0;
+        }
+
+        .notes-display {
+            background-color: #051005;
+            border: 1px solid #30d0c0;
+            padding: 8px;
+            font-size: 20px;
+            text-align: center;
+            min-height: 30px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .score-container {
+            background-color: var(--bg-color);
+            border: 1px solid #30d0c0;
+            padding: 4px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .powered-by {
+            font-family: var(--font-stack);
+            font-size: 12px;
+            color: var(--p-color);
+            opacity: 0.6;
+            margin-top: 4px;
+            text-shadow: 0 0 2px var(--p-color);
+        }
+
+        #scoreCanvas {
+            background-color: #fff;
+            border: 1px solid #000;
+        }
+
+        #status-led {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background-color: #3d0000;
+            margin-right: 8px;
+        }
+
+        #status-led.active {
+            background-color: #ff3535;
+            box-shadow: 0 0 10px #f35858;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1><span id="status-led"></span>CHORD SCANNER</h1>
+
+        <div class="control-group">
+            <label>> MIDI IN (KEYBOARD)</label>
+            <select id="midiInSelect"><option value="">SEARCHING...</option></select>
+        </div>
+
+        <div class="control-group">
+            <div class="checkbox-row">
+                <div class="checkbox-item">
+                    <input type="checkbox" id="preferFlats" checked>
+                    <label for="preferFlats">PREFER FLATS (♭)</label>
+                </div>
+                <div class="checkbox-item">
+                    <input type="checkbox" id="octaveShift">
+                    <label for="octaveShift">OCTAVE +1</label>
+                </div>
+            </div>
+        </div>
+
+        <div class="score-container">
+            <canvas id="scoreCanvas" width="350" height="300"></canvas>
+            <div class="powered-by">Powered by VexFlow (MIT)</div>
+        </div>
+
+        <div class="chord-display" id="chordDisplay">
+            <div class="chord-main" id="chordMain"></div>
+            <div class="chord-alt" id="chordAlt"></div>
+        </div>
+
+        <div class="notes-display" id="notesList"></div>
+    </div>
+
+    <script>
+        const { Renderer, Stave, StaveNote, Accidental, Formatter, StaveConnector } = Vex.Flow;
+
+        let midiAccess = null;
+        let selectedInput = null;
+        let activeNotes = new Map();
+        let sustainedNotes = new Set();
+
+        const chordDisplay = document.getElementById('chordDisplay');
+        const chordMain = document.getElementById('chordMain');
+        const chordAlt = document.getElementById('chordAlt');
+        const notesDisplay = document.getElementById('notesList');
+        const statusLed = document.getElementById('status-led');
+        const preferFlatsCheckbox = document.getElementById('preferFlats');
+        const octaveShiftCheckbox = document.getElementById('octaveShift');
+
+        const canvas = document.getElementById('scoreCanvas');
+        const renderer = new Renderer(canvas, Renderer.Backends.CANVAS);
+        const ctx = renderer.getContext();
+        ctx.setFont('Arial', 10, '');
+
+        // ---------- OPTIMIERUNG: Cache & Animation-Frame-Steuerung ----------
+        let lastDrawnKey = '';
+        let drawRequested = false;
+        let debounceTimer = null;       // nur für Akkordtext
+
+        const STORAGE_KEY = 'selectedMidiInputName';
+
+        const PITCH_CLASSES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+
+        const FLAT_MAP = {
+            'C#': 'D♭', 'D#': 'E♭', 'F#': 'G♭', 'G#': 'A♭', 'A#': 'B♭',
+            'C♯': 'D♭', 'D♯': 'E♭', 'F♯': 'G♭', 'G♯': 'A♭', 'A♯': 'B♭',
+            'Db': 'D♭', 'Eb': 'E♭', 'Gb': 'G♭', 'Ab': 'A♭', 'Bb': 'B♭'
+        };
+
+        const CHORD_PATTERNS = [
+            { name: '', intervals: [0, 4, 7] },
+            { name: 'm', intervals: [0, 3, 7] },
+            { name: 'sus2', intervals: [0, 2, 7] },
+            { name: 'sus4', intervals: [0, 5, 7] },
+            { name: 'dim', intervals: [0, 3, 6] },
+            { name: 'aug', intervals: [0, 4, 8] },
+            { name: '6', intervals: [0, 4, 7, 9] },
+            { name: 'm6', intervals: [0, 3, 7, 9] },
+            { name: 'maj7', intervals: [0, 4, 7, 11] },
+            { name: '7', intervals: [0, 4, 7, 10] },
+            { name: 'm7', intervals: [0, 3, 7, 10] },
+            { name: 'm(maj7)', intervals: [0, 3, 7, 11] },
+            { name: 'm7♭5', intervals: [0, 3, 6, 10] },
+            { name: 'dim7', intervals: [0, 3, 6, 9] },
+            { name: '7sus4', intervals: [0, 5, 7, 10] },
+            { name: '7sus2', intervals: [0, 2, 7, 10] },
+            { name: 'add9', intervals: [0, 2, 4, 7] },
+            { name: 'madd9', intervals: [0, 2, 3, 7] },
+            { name: 'maj7♭5', intervals: [0, 4, 6, 11] },
+            { name: '7♭5', intervals: [0, 4, 6, 10] },
+            { name: '7♯5', intervals: [0, 4, 8, 10] },
+            { name: 'maj7♯11', intervals: [0, 4, 6, 7, 11] },
+            { name: '9', intervals: [0, 2, 4, 7, 10] },
+            { name: 'maj9', intervals: [0, 2, 4, 7, 11] },
+            { name: 'm9', intervals: [0, 2, 3, 7, 10] },
+            { name: '7♭9', intervals: [0, 1, 4, 7, 10] },
+            { name: '7♯9', intervals: [0, 3, 4, 7, 10] },
+            { name: '6/9', intervals: [0, 2, 4, 7, 9] },
+            { name: 'm6/9', intervals: [0, 2, 3, 7, 9] },
+            { name: '9sus4', intervals: [0, 2, 5, 7, 10] }
+        ];
+
+        const SORTED_PATTERNS = [...CHORD_PATTERNS].sort((a, b) => a.intervals.length - b.intervals.length);
+
+        function midiToPitchClass(number) {
+            return PITCH_CLASSES[number % 12];
+        }
+
+        function pitchClassToNumber(pc) {
+            const normalized = pc
+                .replace('♯', '#').replace('♭', 'b')
+                .replace('Db', 'C#').replace('Eb', 'D#').replace('Gb', 'F#')
+                .replace('Ab', 'G#').replace('Bb', 'A#');
+            return PITCH_CLASSES.indexOf(normalized);
+        }
+
+        function midiToFullNote(number) {
+            const pc = PITCH_CLASSES[number % 12];
+            const octave = Math.floor(number / 12) - 1;
+            return pc + octave;
+        }
+
+        function getOctaveShift() {
+            return octaveShiftCheckbox.checked ? 12 : 0;
+        }
+
+        function getShiftedMidiNotes() {
+            const shift = getOctaveShift();
+            return Array.from(activeNotes.keys()).map(n => n + shift).sort((a, b) => a - b);
+        }
+
+        function midiToVexNote(midi) {
+            const pitchClass = midi % 12;
+            const octave = Math.floor(midi / 12) - 1;
+            let note = PITCH_CLASSES[pitchClass];
+
+            if (preferFlatsCheckbox.checked) {
+                note = note.replace('#', '♯');
+                if (FLAT_MAP[note]) note = FLAT_MAP[note];
+                note = note.replace('♭', 'b');
+            } else {
+                note = note.replace('#', '#');
+            }
+            return note + '/' + octave;
+        }
+
+        function toFlat(pc) {
+            if (!preferFlatsCheckbox.checked) return pc.replace('#', '♯').replace('b', '♭');
+            let normal = pc.replace('#', '♯').replace('b', '♭');
+            return FLAT_MAP[normal] || normal;
+        }
+
+        function beautifyChord(raw) {
+            if (raw.includes('/')) {
+                const [chordPart, bassPart] = raw.split('/');
+                return beautifyChord(chordPart) + '/' + toFlat(bassPart);
+            }
+            const match = raw.match(/^([A-G][#♯♭b]?)(.*)/);
+            if (!match) return raw;
+            let root = match[1];
+            const suffix = match[2];
+            if (preferFlatsCheckbox.checked) {
+                root = root.replace('#', '♯').replace('b', '♭');
+                root = FLAT_MAP[root] || root;
+            } else {
+                root = root.replace('#', '♯').replace('b', '♭');
+            }
+            const cleanSuffix = suffix.replace('#', '♯').replace('b', '♭');
+            return root + cleanSuffix;
+        }
+
+        function detectAllChords(midiNotes) {
+            const uniquePCs = [...new Set(midiNotes.map(midiToPitchClass))];
+            if (uniquePCs.length < 3) return [];
+
+            const exactResults = [];
+            for (let rootPC of uniquePCs) {
+                const intervals = [0];
+                for (let pc of uniquePCs) {
+                    if (pc === rootPC) continue;
+                    let diff = pitchClassToNumber(pc) - pitchClassToNumber(rootPC);
+                    if (diff < 0) diff += 12;
+                    if (diff > 0) intervals.push(diff);
+                }
+                intervals.sort((a, b) => a - b);
+
+                for (let pattern of CHORD_PATTERNS) {
+                    if (pattern.intervals.length === intervals.length &&
+                        pattern.intervals.every((v, i) => v === intervals[i])) {
+                        exactResults.push(rootPC + pattern.name);
+                        break;
+                    }
+                }
+            }
+
+            if (exactResults.length > 0) return exactResults;
+
+            const subsetResults = [];
+            for (let rootPC of uniquePCs) {
+                const playedIntervals = [];
+                for (let pc of uniquePCs) {
+                    if (pc === rootPC) continue;
+                    let diff = pitchClassToNumber(pc) - pitchClassToNumber(rootPC);
+                    if (diff < 0) diff += 12;
+                    if (diff > 0) playedIntervals.push(diff);
+                }
+                playedIntervals.sort((a, b) => a - b);
+
+                for (let pattern of SORTED_PATTERNS) {
+                    if (playedIntervals.every(interval => pattern.intervals.includes(interval))) {
+                        subsetResults.push(rootPC + pattern.name);
+                        break;
+                    }
+                }
+            }
+            return subsetResults;
+        }
+
+        function selectMainChord(allChords, midiNotes) {
+            if (allChords.length === 0) return null;
+            const bassPC = midiToPitchClass(midiNotes[0]);
+            const first = allChords[0];
+            const firstRoot = first.match(/^[A-G][#♯♭b]?/)[0];
+            if (pitchClassToNumber(firstRoot) !== pitchClassToNumber(bassPC)) {
+                return first + '/' + bassPC;
+            }
+            return first;
+        }
+
+        function updateNotesDisplay() {
+            if (activeNotes.size === 0 && (!sustainActive || sustainedNotes.size === 0)) {
+                statusLed.classList.remove('active');
+                notesDisplay.textContent = '';
+            } else {
+                statusLed.classList.add('active');
+                const shift = getOctaveShift();
+                const notes = Array.from(activeNotes.keys()).map(n => n + shift).sort((a, b) => a - b);
+                const fullNotes = notes.map(n => midiToFullNote(n));
+                notesDisplay.textContent = fullNotes.join('  ');
+            }
+        }
+
+        // ---------- OPTIMIERTE DRAW-FUNKTION MIT CACHE ----------
+        function drawScore() {
+            const midiNotes = getShiftedMidiNotes();
+            const preferFlats = preferFlatsCheckbox.checked;
+
+            const currentKey = midiNotes.join(',') + '|' + (preferFlats ? 'b' : '#');
+
+            if (currentKey === lastDrawnKey) {
+                return;
+            }
+            lastDrawnKey = currentKey;
+
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.fillStyle = '#FFFFFF';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.fillStyle = '#000000';
+            ctx.strokeStyle = '#000000';
+
+            const staveX = 104;
+            const staveWidth = 2 * (canvas.width / 2 - staveX);
+            const trebleY = 60;
+            const bassY = 140;
+
+            const staveTreble = new Stave(staveX, trebleY, staveWidth);
+            staveTreble.addClef('treble');
+            staveTreble.addKeySignature('C');
+            staveTreble.setContext(ctx);
+            staveTreble.draw();
+
+            const staveBass = new Stave(staveX, bassY, staveWidth);
+            staveBass.addClef('bass');
+            staveBass.addKeySignature('C');
+            staveBass.setContext(ctx);
+            staveBass.draw();
+
+            new StaveConnector(staveTreble, staveBass)
+                .setContext(ctx)
+                .setType(StaveConnector.type.BRACE)
+                .draw();
+
+            if (midiNotes.length === 0) return;
+
+            const trebleNotes = midiNotes.filter(n => n >= 60);
+            const bassNotes = midiNotes.filter(n => n < 60);
+
+            function createNote(keys, clef) {
+                const note = new StaveNote({
+                    keys,
+                    duration: 'w',
+                    clef: clef
+                });
+                note.setStyle({ fillStyle: '#000', strokeStyle: '#000' });
+
+                for (let i = 0; i < keys.length; i++) {
+                    const noteName = keys[i].split('/')[0];
+                    if (noteName.includes('b')) {
+                        note.addModifier(new Accidental('b'), i);
+                    } else if (noteName.includes('#')) {
+                        note.addModifier(new Accidental('#'), i);
+                    }
+                }
+                return note;
+            }
+
+            if (trebleNotes.length > 0) {
+                const keys = trebleNotes.map(n => midiToVexNote(n));
+                const note = createNote(keys, 'treble');
+                Formatter.FormatAndDraw(ctx, staveTreble, [note], {
+                    align_center: true,
+                    auto_beam: false
+                });
+            }
+
+            if (bassNotes.length > 0) {
+                const keys = bassNotes.map(n => midiToVexNote(n));
+                const note = createNote(keys, 'bass');
+                Formatter.FormatAndDraw(ctx, staveBass, [note], {
+                    align_center: true,
+                    auto_beam: false
+                });
+            }
+        }
+
+        // ---------- ERWEITERTE FADEOUT-STEUERUNG (original) ----------
+        let sustainActive = false;
+        let sustainTimerActive = false;
+        let sustainTimer = null;
+        let longFadeInProgress = false;
+        let sustainOnlyMode = false;
+
+        function startSustainOnlyTimer() {
+            if (sustainTimerActive || longFadeInProgress) return;
+            sustainTimerActive = true;
+            sustainOnlyMode = true;
+            sustainTimer = setTimeout(() => {
+                sustainTimerActive = false;
+                sustainOnlyMode = false;
+                startLongFade();
+            }, 500);
+        }
+
+        function cancelSustainOnlyTimer() {
+            if (sustainTimer) {
+                clearTimeout(sustainTimer);
+                sustainTimer = null;
+            }
+            sustainTimerActive = false;
+            sustainOnlyMode = false;
+        }
+
+        function startLongFade() {
+            if (longFadeInProgress) return;
+            longFadeInProgress = true;
+
+            chordMain.style.transition = 'opacity 8s ease';
+            chordAlt.style.transition = 'opacity 8s ease';
+
+            chordMain.classList.add('fading');
+            chordAlt.classList.add('fading');
+
+            const onTransitionEnd = () => {
+                chordMain.textContent = '';
+                chordAlt.textContent = '';
+                chordMain.classList.remove('fading');
+                chordAlt.classList.remove('fading');
+                chordMain.style.transition = 'opacity 1.5s ease';
+                chordAlt.style.transition = 'opacity 1.5s ease';
+                longFadeInProgress = false;
+                chordMain.removeEventListener('transitionend', onTransitionEnd);
+            };
+
+            chordMain.addEventListener('transitionend', onTransitionEnd, { once: true });
+
+            setTimeout(() => {
+                if (longFadeInProgress) {
+                    onTransitionEnd();
+                }
+            }, 8500);
+        }
+
+        function evaluateChord() {
+            const midiNotes = getShiftedMidiNotes();
+
+            if (midiNotes.length > 0) {
+                cancelSustainOnlyTimer();
+                longFadeInProgress = false;
+
+                chordMain.classList.remove('fading');
+                chordAlt.classList.remove('fading');
+                chordMain.style.transition = 'opacity 1.5s ease';
+                chordAlt.style.transition = 'opacity 1.5s ease';
+
+                const all = detectAllChords(midiNotes);
+                const mainRaw = selectMainChord(all, midiNotes);
+
+                if (mainRaw) {
+                    const mainClean = beautifyChord(mainRaw);
+                    chordMain.textContent = mainClean;
+                    const others = all
+                        .map(c => beautifyChord(c))
+                        .filter(c => c !== mainClean && c !== mainRaw);
+                    chordAlt.textContent = [...new Set(others)].join('  |  ') || '';
+                } else {
+                    chordMain.textContent = '';
+                    chordAlt.textContent = '';
+                }
+            } else {
+                if (sustainOnlyMode || longFadeInProgress) {
+                    return;
+                }
+
+                if (chordMain.textContent !== '') {
+                    chordMain.style.transition = 'opacity 1.5s ease';
+                    chordAlt.style.transition = 'opacity 1.5s ease';
+
+                    chordMain.classList.add('fading');
+                    chordAlt.classList.add('fading');
+
+                    const onTransitionEnd = () => {
+                        chordMain.textContent = '';
+                        chordAlt.textContent = '';
+                        chordMain.classList.remove('fading');
+                        chordAlt.classList.remove('fading');
+                        chordMain.removeEventListener('transitionend', onTransitionEnd);
+                    };
+
+                    chordMain.addEventListener('transitionend', onTransitionEnd, { once: true });
+
+                    setTimeout(() => {
+                        if (chordMain.classList.contains('fading')) {
+                            onTransitionEnd();
+                        }
+                    }, 1600);
+                }
+            }
+        }
+
+        // ---------- NEUE PLANUNGSLOGIK FÜR DAS ZEICHNEN ----------
+        function requestDraw() {
+            if (!drawRequested) {
+                drawRequested = true;
+                requestAnimationFrame(() => {
+                    drawRequested = false;
+                    drawScore();
+                });
+            }
+        }
+
+        // ---------- HANDLE MIDI CHANGE: sofortige Noten, verzögerter Akkord ----------
+        function handleMidiChange() {
+            // Notenliste und Zeichnung sofort aktualisieren
+            updateNotesDisplay();
+            requestDraw();   // asynchron, aber ohne künstliche Verzögerung
+
+            // Akkordtext-Debounce (80 ms)
+            if (debounceTimer) clearTimeout(debounceTimer);
+            debounceTimer = setTimeout(() => {
+                evaluateChord();
+                debounceTimer = null;
+            }, 80);
+        }
+
+        // Checkbox-Listener (Noten sofort, Akkord mit Debounce)
+        preferFlatsCheckbox.addEventListener('change', () => {
+            lastDrawnKey = '';   // Cache zurücksetzen für neue Vorzeichen
+            if (activeNotes.size > 0) {
+                handleMidiChange();  // zeichnet sofort, startet Akkord-Debounce
+            }
+        });
+
+        octaveShiftCheckbox.addEventListener('change', () => {
+            lastDrawnKey = '';
+            if (activeNotes.size > 0) {
+                handleMidiChange();
+            }
+        });
+
+        // MIDI-Setup (unverändert)
+        function saveSelectedInputName(name) {
+            localStorage.setItem(STORAGE_KEY, name);
+        }
+        function getStoredInputName() {
+            return localStorage.getItem(STORAGE_KEY);
+        }
+        function selectStoredInput() {
+            const storedName = getStoredInputName();
+            if (!storedName || !midiAccess) return;
+            for (let input of midiAccess.inputs.values()) {
+                if (input.name === storedName) {
+                    document.getElementById('midiInSelect').value = input.id;
+                    if (selectedInput) selectedInput.onmidimessage = null;
+                    selectedInput = input;
+                    selectedInput.onmidimessage = handleMIDIMessage;
+                    return;
+                }
+            }
+        }
+
+        function updatePorts() {
+            const inSel = document.getElementById('midiInSelect');
+            inSel.innerHTML = '<option value="">-- SELECT --</option>';
+            for (let input of midiAccess.inputs.values()) {
+                inSel.innerHTML += `<option value="${input.id}">${input.name}</option>`;
+            }
+            selectStoredInput();
+        }
+
+        document.getElementById('midiInSelect').addEventListener('change', e => {
+            if (selectedInput) selectedInput.onmidimessage = null;
+            if (e.target.value) {
+                selectedInput = midiAccess.inputs.get(e.target.value);
+                selectedInput.onmidimessage = handleMIDIMessage;
+                saveSelectedInputName(selectedInput.name);
+            } else {
+                selectedInput = null;
+                localStorage.removeItem(STORAGE_KEY);
+            }
+        });
+
+        if (navigator.requestMIDIAccess) {
+            navigator.requestMIDIAccess().then(onMIDISuccess, () => {});
+        }
+
+        function onMIDISuccess(access) {
+            midiAccess = access;
+            updatePorts();
+            midiAccess.onstatechange = updatePorts;
+        }
+
+        function handleMIDIMessage(msg) {
+            const [status, note, velocity] = msg.data;
+            const cmd = status >> 4;
+            const channel = status & 0x0F;
+
+            if (cmd === 9 && velocity > 0) {
+                activeNotes.set(note, velocity);
+                sustainedNotes.delete(note);
+                cancelSustainOnlyTimer();
+            }
+            else if (cmd === 8 || (cmd === 9 && velocity === 0)) {
+                if (sustainActive) {
+                    sustainedNotes.add(note);
+                    activeNotes.delete(note);
+                    if (activeNotes.size === 0) {
+                        startSustainOnlyTimer();
+                    }
+                } else {
+                    activeNotes.delete(note);
+                }
+            }
+            else if (cmd === 11) {
+                if (note === 64) {
+                    if (velocity >= 64) {
+                        sustainActive = true;
+                    } else {
+                        sustainActive = false;
+                        for (let n of sustainedNotes) {
+                            activeNotes.delete(n);
+                        }
+                        sustainedNotes.clear();
+                        cancelSustainOnlyTimer();
+                        if (activeNotes.size === 0) {
+                            handleMidiChange();
+                        }
+                    }
+                }
+            }
+
+            handleMidiChange();
+        }
+
+        // Initial leere Notenzeilen zeichnen
+        drawScore();
+    </script>
+</body>
+</html>

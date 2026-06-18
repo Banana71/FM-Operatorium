@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FM-Operatorium - Groovebox</title>
+    <link href="https://fonts.googleapis.com/css2?family=VT323&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --p-color: #33ff33;
+            --bg-color: #000000;
+            --font-stack: 'VT323', monospace;
+            --panel-bg: #051005;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--p-color);
+            font-family: var(--font-stack);
+            font-size: 18px; 
+            margin: 0;
+            padding: 15px;
+            text-shadow: 0 0 5px var(--p-color);
+        }
+
+        .container {
+            max-width: 900px; 
+            margin: 0 auto;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .panel {
+            border: 2px solid var(--p-color);
+            padding: 10px;
+            background-color: var(--panel-bg);
+            box-shadow: 0 0 10px rgba(51, 255, 51, 0.2);
+        }
+
+        h1, h2 {
+            text-transform: uppercase;
+            margin: 0 0 10px 0;
+            border-bottom: 1px dashed var(--p-color);
+            padding-bottom: 5px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        h1 { font-size: 24px; }
+        h2 { font-size: 18px; color: #fff; }
+
+        .control-group {
+            display: flex;
+            gap: 15px;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+
+        select, input[type="text"], input[type="number"], button {
+            background-color: #0a1a0a;
+            color: var(--p-color);
+            border: 1px solid var(--p-color);
+            font-family: var(--font-stack);
+            font-size: 16px;
+            padding: 4px 8px;
+            text-transform: uppercase;
+            cursor: pointer;
+        }
+
+        button:active, button.active {
+            background-color: var(--p-color);
+            color: #000;
+        }
+
+        .led-display {
+            background-color: #200000;
+            color: #ff3333;
+            border: 2px inset #500000;
+            border-radius: 4px;
+            padding: 2px 6px;
+            font-size: 22px;
+            font-weight: bold;
+            text-shadow: 0 0 8px #ff0000;
+            min-width: 3ch;
+            text-align: right;
+            display: inline-block;
+        }
+
+        /* Sequencer Grid Styles */
+        .seq-grid {
+            display: grid;
+            grid-template-columns: repeat(16, 1fr);
+            gap: 4px;
+            overflow-x: auto;
+        }
+
+        .step-col {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 5px;
+            background-color: #000;
+            padding: 5px 2px;
+            border: 1px solid #113311;
+        }
+
+        .step-col.active-step {
+            background-color: #113311;
+            border-color: var(--p-color);
+        }
+
+        .step-checkbox {
+            appearance: none;
+            width: 20px;
+            height: 20px;
+            border: 1px solid var(--p-color);
+            background-color: #000;
+            cursor: pointer;
+        }
+
+        .step-checkbox:checked {
+            background-color: var(--p-color);
+            box-shadow: 0 0 8px var(--p-color);
+        }
+
+        .step-vel {
+            writing-mode: bt-lr; /* IE */
+            -webkit-appearance: slider-vertical; /* WebKit */
+            width: 8px;
+            height: 60px;
+            cursor: pointer;
+        }
+
+        .note-input {
+            width: 30px;
+            text-align: center;
+            font-size: 14px;
+            padding: 2px;
+        }
+
+        .drum-row-label {
+            font-size: 14px;
+            margin-bottom: 2px;
+            color: #aaa;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div class="panel">
+        <h1>MASTER CONTROL</h1>
+        <div class="control-group">
+            <select id="midiInSelect"><option value="">MIDI IN...</option></select>
+            <select id="midiOutSelect"><option value="">MIDI OUT...</option></select>
+            <button id="btnPlay">PLAY / STOP</button>
+            <div style="margin-left:auto;">
+                TEMPO: <span id="valBpm" class="led-display">120</span>
+                <input type="range" id="sliderBpm" min="60" max="200" value="120" style="vertical-align: middle;">
+            </div>
+        </div>
+    </div>
+
+    <div class="panel">
+        <h2>DRUMS (CH 10)</h2>
+        <div class="seq-grid" id="drumGrid"></div>
+    </div>
+
+    <div class="panel">
+        <h2>SEQ 1 (CH 1)</h2>
+        <div class="seq-grid" id="seq1Grid"></div>
+    </div>
+
+    <div class="panel">
+        <h2>SEQ 2 (CH 2)</h2>
+        <div class="seq-grid" id="seq2Grid"></div>
+    </div>
+
+    <div class="panel">
+        <h2>ARPEGGIATOR (CH 1)</h2>
+        <div class="control-group">
+            <button id="btnHold">HOLD: OFF</button>
+            <select id="arpType">
+                <option value="up">UP</option>
+                <option value="down">DOWN</option>
+                <option value="updown">UP/DOWN</option>
+                <option value="random">RANDOM</option>
+            </select>
+            <select id="arpOctaves">
+                <option value="1">1 OCT.</option>
+                <option value="2">2 OCT.</option>
+            </select>
+            <span>(Spielt synchron mit Master-Clock)</span>
+        </div>
+    </div>
+</div>
+
+<script>
+    // --- MIDI Setup ---
+    let midiAccess = null;
+    let selectedInput = null;
+    let selectedOutput = null;
+
+    // --- Master Clock State ---
+    let isPlaying = false;
+    let bpm = 120;
+    let masterStep = 0; // 0 to 15
+    let clockTimer = null;
+
+    // --- Arp State ---
+    let activeNotes = new Map();   
+    let physicalNotes = new Set(); 
+    let arpSequence = [];          
+    let arpCurrentStep = 0;      
+    let arpPlayingNote = null;   
+    let holdEnabled = false;
+
+    // --- Init WebMIDI ---
+    if (navigator.requestMIDIAccess) {
+        navigator.requestMIDIAccess().then(onMIDISuccess, () => console.error('MIDI Access Denied'));
+    }
+
+    function onMIDISuccess(access) {
+        midiAccess = access;
+        updatePorts();
+        midiAccess.onstatechange = updatePorts;
+    }
+
+    function updatePorts() {
+        const inSelect = document.getElementById('midiInSelect');
+        const outSelect = document.getElementById('midiOutSelect');
+        
+        inSelect.innerHTML = '<option value="">MIDI IN...</option>';
+        for (let input of midiAccess.inputs.values()) {
+            inSelect.innerHTML += `<option value="${input.id}">${input.name}</option>`;
+        }
+
+        outSelect.innerHTML = '<option value="">MIDI OUT...</option>';
+        for (let output of midiAccess.outputs.values()) {
+            outSelect.innerHTML += `<option value="${output.id}">${output.name}</option>`;
+        }
+    }
+
+    document.getElementById('midiInSelect').addEventListener('change', (e) => {
+        if (selectedInput) selectedInput.onmidimessage = null; 
+        if (e.target.value) {
+            selectedInput = midiAccess.inputs.get(e.target.value);
+            selectedInput.onmidimessage = handleMidiInput;
+        }
+    });
+
+    document.getElementById('midiOutSelect').addEventListener('change', (e) => {
+        selectedOutput = e.target.value ? midiAccess.outputs.get(e.target.value) : null;
+    });
+
+    // --- Arpeggiator Input Logic ---
+    function handleMidiInput(message) {
+        const [status, note, velocity] = message.data;
+        const cmd = status >> 4;
+
+        if (cmd === 9 && velocity > 0) {
+            if (physicalNotes.size === 0 && holdEnabled) {
+                activeNotes.clear(); 
+                arpCurrentStep = 0; 
+            }
+            physicalNotes.add(note);
+            activeNotes.set(note, velocity);
+            updateArpSequence();
+        } else if (cmd === 8 || (cmd === 9 && velocity === 0)) {
+            physicalNotes.delete(note);
+            if (!holdEnabled) {
+                activeNotes.delete(note);
+                updateArpSequence();
+            }
+        }
+    }
+
+    function updateArpSequence() {
+        if (activeNotes.size === 0) {
+            arpSequence = [];
+            if (arpPlayingNote !== null) {
+                sendMidi(0x80, arpPlayingNote.note, 0); // CH 1
+                arpPlayingNote = null;
+            }
+            return;
+        }
+
+        let sortedKeys = Array.from(activeNotes.keys()).sort((a, b) => a - b);
+        let octaves = parseInt(document.getElementById('arpOctaves').value);
+        let expanded = [];
+        for (let i = 0; i < octaves; i++) {
+            sortedKeys.forEach(n => expanded.push({ note: n + (i * 12), velocity: activeNotes.get(n) }));
+        }
+
+        const type = document.getElementById('arpType').value;
+        if (type === 'up') arpSequence = expanded;
+        else if (type === 'down') arpSequence = expanded.slice().reverse();
+        else if (type === 'updown') arpSequence = [...expanded, ...expanded.slice().reverse().slice(1, -1)];
+        else if (type === 'random') arpSequence = expanded.slice().sort(() => Math.random() - 0.5);
+    }
+
+    document.getElementById('btnHold').addEventListener('click', (e) => {
+        holdEnabled = !holdEnabled;
+        e.target.textContent = holdEnabled ? 'HOLD: ON' : 'HOLD: OFF';
+        e.target.classList.toggle('active', holdEnabled);
+        if (!holdEnabled && physicalNotes.size === 0) {
+            activeNotes.clear();
+            updateArpSequence();
+        }
+    });
+
+    // --- UI Generation for Sequencers ---
+    function buildDrums() {
+        const grid = document.getElementById('drumGrid');
+        for (let i = 0; i < 16; i++) {
+            const col = document.createElement('div');
+            col.className = 'step-col drum-col';
+            col.id = `drum-col-${i}`;
+            
+            // HH, Snare, Kick
+            col.innerHTML = `
+                <div class="drum-row-label">HH</div><input type="checkbox" class="step-checkbox dr-hh" data-step="${i}">
+                <div class="drum-row-label">SN</div><input type="checkbox" class="step-checkbox dr-sn" data-step="${i}">
+                <div class="drum-row-label">BD</div><input type="checkbox" class="step-checkbox dr-bd" data-step="${i}">
+            `;
+            grid.appendChild(col);
+        }
+    }
+
+    function buildSeq(id, defaultNote) {
+        const grid = document.getElementById(`${id}Grid`);
+        for (let i = 0; i < 16; i++) {
+            const col = document.createElement('div');
+            col.className = `step-col ${id}-col`;
+            col.id = `${id}-col-${i}`;
+            
+            col.innerHTML = `
+                <input type="checkbox" class="step-checkbox ${id}-on" data-step="${i}">
+                <input type="number" class="note-input ${id}-note" value="${defaultNote}" min="0" max="127">
+                <input type="range" class="step-vel ${id}-vel" min="1" max="127" value="100" orient="vertical">
+            `;
+            grid.appendChild(col);
+        }
+    }
+
+    buildDrums();
+    buildSeq('seq1', 48); // Default C3
+    buildSeq('seq2', 36); // Default C2
+
+    // --- Master Clock Logic ---
+    document.getElementById('sliderBpm').addEventListener('input', (e) => {
+        bpm = e.target.value;
+        document.getElementById('valBpm').textContent = String(bpm).padStart(3, '0');
+        if (isPlaying) startClock(); 
+    });
+
+    document.getElementById('btnPlay').addEventListener('click', (e) => {
+        isPlaying = !isPlaying;
+        e.target.classList.toggle('active', isPlaying);
+        if (isPlaying) {
+            masterStep = 0;
+            startClock();
+        } else {
+            clearInterval(clockTimer);
+            turnOffAllNotes();
+            clearUIHighlights();
+        }
+    });
+
+    function startClock() {
+        if (clockTimer) clearInterval(clockTimer);
+        const msPer16th = (60000 / bpm) / 4; 
+        clockTimer = setInterval(tick, msPer16th);
+    }
+
+    // Stores currently playing notes so we can send Note Off on the next step
+    let playingNotes = { seq1: null, seq2: null }; 
+
+    function tick() {
+        if (!selectedOutput) {
+            masterStep = (masterStep + 1) % 16;
+            return;
+        }
+
+        clearUIHighlights();
+        
+        // Highlight current columns
+        document.getElementById(`drum-col-${masterStep}`).classList.add('active-step');
+        document.getElementById(`seq1-col-${masterStep}`).classList.add('active-step');
+        document.getElementById(`seq2-col-${masterStep}`).classList.add('active-step');
+
+        // Stop previous seq notes
+        if (playingNotes.seq1 !== null) sendMidi(0x80, playingNotes.seq1, 0); // CH 1
+        if (playingNotes.seq2 !== null) sendMidi(0x81, playingNotes.seq2, 0); // CH 2
+        playingNotes.seq1 = null;
+        playingNotes.seq2 = null;
+
+        // --- Process Drums (CH 10 = 0x99) ---
+        const colDrum = document.getElementById(`drum-col-${masterStep}`);
+        if (colDrum.querySelector('.dr-bd').checked) sendMidi(0x99, 36, 100);
+        if (colDrum.querySelector('.dr-sn').checked) sendMidi(0x99, 38, 100);
+        if (colDrum.querySelector('.dr-hh').checked) sendMidi(0x99, 42, 100);
+
+        // --- Process Seq 1 (CH 1 = 0x90) ---
+        const colS1 = document.getElementById(`seq1-col-${masterStep}`);
+        if (colS1.querySelector('.seq1-on').checked) {
+            const note = parseInt(colS1.querySelector('.seq1-note').value);
+            const vel = parseInt(colS1.querySelector('.seq1-vel').value);
+            sendMidi(0x90, note, vel);
+            playingNotes.seq1 = note;
+        }
+
+        // --- Process Seq 2 (CH 2 = 0x91) ---
+        const colS2 = document.getElementById(`seq2-col-${masterStep}`);
+        if (colS2.querySelector('.seq2-on').checked) {
+            const note = parseInt(colS2.querySelector('.seq2-note').value);
+            const vel = parseInt(colS2.querySelector('.seq2-vel').value);
+            sendMidi(0x91, note, vel);
+            playingNotes.seq2 = note;
+        }
+
+        // --- Process Arp (CH 1 = 0x90) ---
+        if (arpPlayingNote !== null) {
+            sendMidi(0x80, arpPlayingNote.note, 0);
+            arpPlayingNote = null;
+        }
+        if (arpSequence.length > 0) {
+            if (arpCurrentStep >= arpSequence.length) arpCurrentStep = 0;
+            arpPlayingNote = arpSequence[arpCurrentStep];
+            sendMidi(0x90, arpPlayingNote.note, arpPlayingNote.velocity);
+            
+            arpCurrentStep++;
+            if (document.getElementById('arpType').value === 'random') updateArpSequence();
+        }
+
+        masterStep = (masterStep + 1) % 16;
+    }
+
+    function sendMidi(status, note, velocity) {
+        if (selectedOutput) selectedOutput.send([status, note, velocity]);
+    }
+
+    function turnOffAllNotes() {
+        if (playingNotes.seq1 !== null) sendMidi(0x80, playingNotes.seq1, 0);
+        if (playingNotes.seq2 !== null) sendMidi(0x81, playingNotes.seq2, 0);
+        if (arpPlayingNote !== null) sendMidi(0x80, arpPlayingNote.note, 0);
+        playingNotes.seq1 = null;
+        playingNotes.seq2 = null;
+        arpPlayingNote = null;
+    }
+
+    function clearUIHighlights() {
+        document.querySelectorAll('.active-step').forEach(el => el.classList.remove('active-step'));
+    }
+
+</script>
+</body>
+</html>
