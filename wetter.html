@@ -1,0 +1,1707 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Soundplantage - Regen-Radar</title>
+
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+
+  <style>
+    :root {
+      --radar-blue: #0A4D8C;
+      --sun-yellow: #FFD966;
+      --bg-light: #F7F9FC;
+      --card-bg: #FFFFFF;
+      --text-dark: #1E2A3A;
+      --text-muted: #5A6B7C;
+      --border-radius: 12px;
+      --shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+      --temp-warm: #2E7D32;
+      --temp-cold: #1565C0;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+      background: var(--bg-light);
+      color: var(--text-dark);
+      line-height: 1.5;
+    }
+
+    header {
+      background: var(--radar-blue);
+      color: #fff;
+      padding: 0.7rem 1.5rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      box-shadow: var(--shadow);
+    }
+
+    header h1 { font-size: 1.4rem; font-weight: 600; }
+    header .current-location {
+      font-size: 0.95rem;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+    }
+
+    .location-bar {
+      max-width: 1900px;
+      margin: 0.6rem auto 0;
+      padding: 0 1rem;
+      display: flex;
+      gap: 1rem;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    .search-wrapper {
+      position: relative;
+      flex: 1;
+      min-width: 250px;
+      max-width: 420px;
+    }
+
+    #location-search {
+      width: 100%;
+      padding: 0.55rem 2.6rem 0.55rem 0.9rem;
+      border: 1px solid #cfd8e3;
+      border-radius: 8px;
+      font-size: 0.9rem;
+      background: #fff;
+      font-family: inherit;
+    }
+
+    #location-search:focus {
+      outline: none;
+      border-color: var(--radar-blue);
+      box-shadow: 0 0 0 3px rgba(10, 77, 140, 0.15);
+    }
+
+    .search-btn {
+      position: absolute;
+      right: 6px;
+      top: 50%;
+      transform: translateY(-50%);
+      background: transparent;
+      border: none;
+      cursor: pointer;
+      font-size: 1rem;
+      padding: 0.3rem 0.5rem;
+      border-radius: 4px;
+      color: var(--radar-blue);
+    }
+
+    .search-btn:hover { background: #F0F4FA; }
+
+    .search-results {
+      display: none;
+      position: absolute;
+      top: 100%;
+      left: 0;
+      right: 0;
+      background: #fff;
+      border: 1px solid #cfd8e3;
+      border-radius: 8px;
+      margin-top: 4px;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+      z-index: 2000;
+      max-height: 320px;
+      overflow-y: auto;
+    }
+
+    .search-result-item {
+      padding: 0.6rem 0.9rem;
+      cursor: pointer;
+      font-size: 0.85rem;
+      border-bottom: 1px solid #f0f0f0;
+      color: var(--text-dark);
+    }
+
+    .search-result-item:hover { background: #F0F4FA; }
+    .search-result-item:last-child { border-bottom: none; }
+
+    .favorites {
+      display: flex;
+      gap: 0.5rem;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    .fav-btn {
+      background: #fff;
+      border: 1px solid #cfd8e3;
+      border-radius: 8px;
+      padding: 0.42rem 0.75rem;
+      font-size: 0.82rem;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      transition: background 0.15s, border-color 0.15s;
+      font-family: inherit;
+      color: var(--text-dark);
+    }
+
+    .fav-btn:hover {
+      background: #F0F4FA;
+      border-color: var(--radar-blue);
+    }
+
+    .fav-btn.empty {
+      font-weight: 700;
+      color: var(--radar-blue);
+      min-width: 38px;
+      justify-content: center;
+      font-size: 1rem;
+    }
+
+    .fav-temp {
+      font-weight: 700;
+      color: var(--radar-blue);
+    }
+
+    .fav-remove {
+      color: #aaa;
+      font-size: 1.05rem;
+      line-height: 1;
+      padding: 0 0.15rem;
+      border-radius: 3px;
+    }
+
+    .fav-remove:hover { color: #d32f2f; background: #ffeaea; }
+
+    .container {
+      max-width: 1900px;
+      margin: 0.0rem auto;
+      padding: 0 1rem;
+      display: grid;
+      grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr);
+      gap: 1rem;
+      align-items: stretch;
+    }
+
+    @media (max-width: 1200px) {
+      .container { grid-template-columns: 1fr; align-items: start; }
+      #radar-map { min-height: max(320px, 40vh); }
+    }
+
+    .radar-card {
+      display: flex;
+      flex-direction: column;
+      min-height: 380px;
+    }
+
+    .right-col {
+      display: flex;
+      flex-direction: column;
+      gap: 0.0rem;
+      min-width: 0;
+    }
+
+    .right-col > .card { display: flex; flex-direction: column; }
+    /* Skeleton-Mindesthöhen – verhindern Layoutsprung beim ersten Laden */
+    .right-col > .card:first-child { min-height: 210px; }
+    .right-col > .card:last-child  { flex: 1; min-height: 380px; }
+    .right-col > .card:last-child .daily-forecast-grid { flex: 1; }
+
+    .card {
+      background: var(--card-bg);
+      border-radius: var(--border-radius);
+      box-shadow: var(--shadow);
+      padding: 0.9rem 1.2rem;
+      min-width: 0;
+    }
+
+    .card h2 {
+      font-size: 1.1rem;
+      font-weight: 600;
+      margin-bottom: 0.5rem;
+      color: var(--radar-blue);
+      border-bottom: 2px solid var(--sun-yellow);
+      padding-bottom: 0.4rem;
+      display: inline-block;
+      align-self: flex-start;
+    }
+
+    #radar-map {
+      flex: 1;
+      min-height: 280px;
+      border-radius: 8px;
+      overflow: hidden;
+      margin-top: 0.4rem;
+      background: #DDE6F0;
+      position: relative;
+    }
+
+    .leaflet-tile-pane .leaflet-layer:first-child .leaflet-tile {
+      filter: hue-rotate(30deg) saturate(1.7) brightness(0.92);
+    }
+
+    .radar-tiles .leaflet-tile { transition: none !important; }
+
+    .city-label {
+      background: transparent;
+      border: none;
+      box-shadow: none;
+      font-weight: 600;
+      font-size: 0.78rem;
+      color: #1E2A3A;
+      text-shadow: 0 0 3px #fff, 0 0 3px #fff;
+      padding: 0;
+      white-space: normal;
+      text-align: left;
+      line-height: 1.25;
+    }
+
+    .city-label .city-temp {
+      display: block;
+      font-weight: 700;
+      font-size: 0.85rem;
+      color: #0A4D8C;
+    }
+
+    .landmark-icon { background: transparent; border: none; }
+
+    .current-location-label {
+      background: transparent;
+      border: none;
+      box-shadow: none;
+      font-weight: 700;
+      font-size: 0.9rem;
+      color: #0A4D8C;
+      text-shadow: 0 0 3px #fff, 0 0 3px #fff, 0 0 3px #fff;
+      padding: 0;
+      white-space: nowrap;
+    }
+
+    .radar-time-overlay {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      z-index: 1100;
+      background: rgba(10, 77, 140, 0.95);
+      color: #FFFFFF;
+      padding: 0.45rem 0.9rem;
+      border-radius: 8px;
+      font-size: 0.95rem;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+      box-shadow: 0 3px 12px rgba(0, 0, 0, 0.35);
+      border: 2px solid var(--sun-yellow);
+      pointer-events: none;
+      white-space: nowrap;
+    }
+
+    .radar-timeline {
+      display: flex;
+      align-items: center;
+      gap: 0.8rem;
+      margin-top: 0.5rem;
+      padding: 0.4rem 0;
+    }
+
+    .tl-play-btn {
+      flex-shrink: 0;
+      width: 34px;
+      height: 34px;
+      border-radius: 50%;
+      border: none;
+      background: var(--radar-blue);
+      color: #fff;
+      font-size: 1rem;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.2s;
+    }
+
+    .tl-play-btn:hover { background: #083a6b; }
+
+    .tl-track-wrapper { flex: 1; position: relative; }
+
+    .tl-slider {
+      width: 100%;
+      -webkit-appearance: none;
+      appearance: none;
+      height: 6px;
+      border-radius: 3px;
+      background: transparent;
+      outline: none;
+      cursor: pointer;
+      --slider-track-bg: #90a4ae;
+    }
+
+    .tl-slider::-webkit-slider-runnable-track {
+      height: 6px; border-radius: 3px; background: var(--slider-track-bg);
+    }
+    .tl-slider::-webkit-slider-thumb {
+      -webkit-appearance: none; appearance: none;
+      width: 18px; height: 18px; border-radius: 50%;
+      background: var(--radar-blue); border: 2px solid #fff;
+      box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+      cursor: pointer; margin-top: -6px;
+    }
+    .tl-slider::-moz-range-track {
+      height: 6px; border-radius: 3px; background: var(--slider-track-bg);
+    }
+    .tl-slider::-moz-range-thumb {
+      width: 18px; height: 18px; border-radius: 50%;
+      background: var(--radar-blue); border: 2px solid #fff;
+      box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3); cursor: pointer;
+    }
+
+    .tl-ticks { position: relative; height: 14px; margin-top: 2px; }
+    .tl-tick {
+      position: absolute; top: 0; width: 1px; height: 8px;
+      background: #aab4c0; transform: translateX(-50%);
+    }
+    .tl-tick.nowcast {
+      background: var(--sun-yellow); height: 10px; width: 2px;
+    }
+    .tl-labels {
+      display: flex; justify-content: space-between;
+      font-size: 0.7rem; color: var(--text-muted); margin-top: 2px;
+    }
+
+    .forecast-table {
+      width: 100%;
+      border-collapse: separate;
+      border-spacing: 6px;
+      margin-top: 0.4rem;
+      table-layout: fixed;
+    }
+
+    .forecast-table td {
+      background: #d8d8d8;
+      border-radius: 8px;
+      padding: 0.5rem 0.25rem;
+      text-align: center;
+      vertical-align: middle;
+      transition: background 0.2s;
+    }
+
+    .forecast-table td:hover { background: #cdcdcd; }
+
+    .forecast-table .fc-time {
+      display: block; font-weight: 600; font-size: 0.9rem;
+      color: var(--text-dark); margin-bottom: 0.15rem;
+    }
+    .forecast-table .fc-icon {
+      font-size: 1.5rem; display: block; line-height: 1.2; margin: 0.05rem 0;
+    }
+    .forecast-table .fc-temp {
+      display: block; font-size: 1rem; font-weight: 700;
+    }
+    .forecast-table .fc-temp.pos { color: var(--temp-warm); }
+    .forecast-table .fc-temp.neg { color: var(--temp-cold); }
+
+    .forecast-table .fc-rain {
+      display: flex; align-items: center; justify-content: center;
+      gap: 4px; font-size: 0.75rem; font-weight: 600;
+      color: var(--text-dark); margin-top: 0.15rem;
+    }
+
+    .rain-dot {
+      display: inline-block; width: 9px; height: 9px;
+      border-radius: 50%; border: 1px solid rgba(0, 0, 0, 0.2);
+      flex-shrink: 0;
+    }
+
+    .daily-forecast-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 0;
+      margin-top: 0.4rem;
+      background: #d8d8d8;
+      border: 1px solid rgb(211, 210, 210);
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+      min-height: 0;
+    }
+
+    .daily-col {
+      padding: 0.7rem 0.25rem;
+      text-align: center;
+      border-right: 1px solid #b8b8b8;
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+      min-height: 0;
+    }
+
+    .daily-col:last-child { border-right: none; }
+
+    .row-datum { font-size: 0.72rem; color: #555; }
+    .row-wochentag {
+      font-size: 0.88rem; font-weight: 600; margin-bottom: 0.35rem;
+    }
+    .row-wochentag .rel {
+      font-size: 0.68rem; font-weight: normal; color: #555;
+    }
+    .row-max { font-size: 0.95rem; font-weight: 700; color: var(--temp-warm); }
+    .row-separator {
+      border: none; border-top: 1px solid #a8a8a8;
+      width: 50%; margin: 0.25rem auto;
+    }
+    .row-min {
+      font-size: 0.9rem; font-weight: 600; color: var(--temp-cold);
+      margin-bottom: 0.5rem;
+    }
+
+    .time-block { margin-bottom: 0.35rem; }
+    .icon-wind {
+      display: flex; align-items: center; justify-content: center;
+      gap: 4px; margin-bottom: 0.1rem;
+    }
+    .slot-icon { font-size: 1.5rem; }
+    .slot-label {
+      font-size: 0.62rem; color: #555;
+      text-transform: uppercase; letter-spacing: 0.3px;
+    }
+
+    .wind-container {
+      display: flex; align-items: center; gap: 2px;
+      font-size: 0.68rem; color: #4a4a4a;
+    }
+    .wind-container svg { width: 13px; height: 13px; }
+
+    .row-sun, .row-rain {
+      font-size: 0.72rem; color: #444;
+      display: flex; align-items: center; justify-content: center;
+      gap: 3px; margin-top: 0.15rem;
+    }
+    .row-sun { margin-top: auto; padding-top: 0.3rem; }
+
+    @media (max-width: 1200px) {
+      .daily-forecast-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+      .slot-icon { font-size: 1.6rem; }
+      .slot-label { font-size: 0.7rem; }
+    }
+
+    @media (max-width: 700px) {
+      .daily-forecast-grid { grid-template-columns: repeat(2, 1fr); }
+      .daily-col:nth-child(2n) { border-right: none; }
+      .daily-col:nth-child(-n+2) { border-bottom: 1px solid #b8b8b8; }
+    }
+    @media (max-width: 400px) {
+      .daily-forecast-grid { grid-template-columns: 1fr; }
+      .daily-col { border-right: none; border-bottom: 1px solid #b8b8b8; }
+      .daily-col:last-child { border-bottom: none; }
+    }
+
+    footer {
+      text-align: center;
+      padding: 1.2rem;
+      font-size: 0.8rem;
+      color: var(--text-muted);
+    }
+
+    footer a { color: var(--radar-blue); text-decoration: none; }
+    footer a:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+
+  <header>
+    <h1>Soundplantage - Regen-Radar</h1>
+    <div class="current-location">📍 <span id="current-location-name">Neuenkirchen‑Tewel</span></div>
+  </header>
+
+  <div class="location-bar">
+    <div class="search-wrapper">
+      <input type="text" id="location-search" placeholder="Ort suchen (z. B. Hamburg, Walsrode, Paris)…" autocomplete="off">
+      <button class="search-btn" id="search-btn" title="Suchen">🔍</button>
+      <div class="search-results" id="search-results"></div>
+    </div>
+    <div class="favorites" id="favorites-list"></div>
+  </div>
+
+  <div class="container">
+    <div class="card radar-card">
+      <h2>🌧️ Regen‑Radar</h2>
+      <div id="radar-map"></div>
+
+      <div class="radar-timeline">
+        <button class="tl-play-btn" id="play-pause-btn" title="Abspielen">▶</button>
+        <div class="tl-track-wrapper">
+          <input type="range" class="tl-slider" id="tl-slider" min="0" max="0" value="0" step="1">
+          <div class="tl-ticks" id="tl-ticks"></div>
+          <div class="tl-labels">
+            <span id="tl-start-label">–</span>
+            <span id="tl-end-label">–</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="right-col">
+      <div class="card">
+        <h2>🌡️ Nächste 24 Stunden – <span id="forecast-location">Tewel</span></h2>
+        <table class="forecast-table" id="forecast-table">
+          <tbody>
+            <tr><td colspan="4">Lade Vorhersage…</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="card">
+        <h2>📅 4-Tage-Vorhersage</h2>
+        <div class="daily-forecast-grid" id="daily-forecast-grid">
+          <div>Lade 4-Tage-Vorhersage…</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <footer>
+    Radar‑Daten: <a href="https://librewxr.net" target="_blank">LibreWXR</a> •
+    Vorhersage‑Daten: <a href="https://open-meteo.com/" target="_blank">Open‑Meteo</a> •
+    Karten‑Daten: <a href="https://www.esri.com/" target="_blank">Esri</a> •
+    Ortssuche: <a href="https://nominatim.openstreetmap.org/" target="_blank">OpenStreetMap Nominatim</a>
+  </footer>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <script>
+    const LOCAL_CITIES = [
+      { name: 'Moskau', lat: 55.7604, lon: 37.6106, pop: 12658000 },
+      { name: 'London', lat: 51.5074, lon: -0.1278, pop: 9626000 },
+      { name: 'Paris', lat: 48.8567, lon: 2.3522, pop: 11215000 },
+      { name: 'Madrid', lat: 40.4168, lon: -3.7038, pop: 6733000 },
+      { name: 'Kiew', lat: 50.4501, lon: 30.5234, pop: 2950000 },
+      { name: 'Rom', lat: 41.9028, lon: 12.4964, pop: 2873000 },
+      { name: 'Berlin', lat: 52.5200, lon: 13.4050, pop: 3755251 },
+      { name: 'Wien', lat: 48.2083, lon: 16.3725, pop: 1973403 },
+      { name: 'Bukarest', lat: 44.4268, lon: 26.1025, pop: 1836000 },
+      { name: 'Budapest', lat: 47.4983, lon: 19.0408, pop: 1685209 },
+      { name: 'Warschau', lat: 52.2297, lon: 21.0122, pop: 1790658 },
+      { name: 'Belgrad', lat: 44.7866, lon: 20.4489, pop: 1383875 },
+      { name: 'Prag', lat: 50.0875, lon: 14.4214, pop: 1397880 },
+      { name: 'Brüssel', lat: 50.8467, lon: 4.3517, pop: 1222637 },
+      { name: 'Sofia', lat: 42.6979, lon: 23.3217, pop: 1205548 },
+      { name: 'Minsk', lat: 53.9022, lon: 27.5618, pop: 1996730 },
+      { name: 'Athen', lat: 37.9842, lon: 23.7281, pop: 643452 },
+      { name: 'Amsterdam', lat: 52.3676, lon: 4.9041, pop: 934927 },
+      { name: 'Kopenhagen', lat: 55.6761, lon: 12.5689, pop: 667099 },
+      { name: 'Helsinki', lat: 60.1708, lon: 24.9375, pop: 686595 },
+      { name: 'Oslo', lat: 59.9139, lon: 10.7522, pop: 709037 },
+      { name: 'Stockholm', lat: 59.3293, lon: 18.0686, pop: 984748 },
+      { name: 'Reykjavík', lat: 64.1466, lon: -21.9426, pop: 139875 },
+      { name: 'Dublin', lat: 53.3498, lon: -6.2603, pop: 588233 },
+      { name: 'Lissabon', lat: 38.7223, lon: -9.1393, pop: 548703 },
+      { name: 'Bern', lat: 46.9480, lon: 7.4474, pop: 134506 },
+      { name: 'Luxemburg', lat: 49.6116, lon: 6.1319, pop: 128512 },
+      { name: 'Valletta', lat: 35.8989, lon: 14.5146, pop: 6442 },
+      { name: 'Monaco', lat: 43.7384, lon: 7.4246, pop: 38300 },
+      { name: 'San Marino', lat: 43.9424, lon: 12.4578, pop: 4040 },
+      { name: 'Vatikanstadt', lat: 41.9029, lon: 12.4534, pop: 825 },
+      { name: 'Andorra la Vella', lat: 42.5072, lon: 1.5222, pop: 24042 },
+      { name: 'Tirana', lat: 41.3289, lon: 19.8178, pop: 418495 },
+      { name: 'Sarajevo', lat: 43.8564, lon: 18.4131, pop: 275524 },
+      { name: 'Zagreb', lat: 45.8131, lon: 15.9772, pop: 767131 },
+      { name: 'Nikosia', lat: 35.1725, lon: 33.3650, pop: 56848 },
+      { name: 'Tallinn', lat: 59.4372, lon: 24.7450, pop: 457572 },
+      { name: 'Riga', lat: 56.9496, lon: 24.1052, pop: 605802 },
+      { name: 'Vilnius', lat: 54.6872, lon: 25.2797, pop: 592389 },
+      { name: 'Podgorica', lat: 42.4304, lon: 19.2594, pop: 150977 },
+      { name: 'Skopje', lat: 41.9973, lon: 21.4280, pop: 544064 },
+      { name: 'Chișinău', lat: 47.0105, lon: 28.8638, pop: 639000 },
+      { name: 'Tiflis', lat: 41.7225, lon: 44.7925, pop: 1118035 },
+      { name: 'Ljubljana', lat: 46.0569, lon: 14.5058, pop: 286745 },
+      { name: 'Bratislava', lat: 48.1486, lon: 17.1077, pop: 476922 },
+      { name: 'Vaduz', lat: 47.1410, lon: 9.5209, pop: 5668 },
+      { name: 'Hamburg', lat: 53.5511, lon: 9.9937, pop: 1851596 },
+      { name: 'München', lat: 48.1351, lon: 11.5820, pop: 1488202 },
+      { name: 'Köln', lat: 50.9375, lon: 6.9603, pop: 1087863 },
+      { name: 'Bremen', lat: 53.0793, lon: 8.8017, pop: 584332 },
+      { name: 'Hannover', lat: 52.3759, lon: 9.7320, pop: 522803 },
+      { name: 'Braunschweig', lat: 52.2689, lon: 10.5268, pop: 252811 },
+      { name: 'Kiel', lat: 54.3233, lon: 10.1228, pop: 251751 },
+      { name: 'Lübeck', lat: 53.8655, lon: 10.6866, pop: 217061 },
+      { name: 'Rostock', lat: 54.0924, lon: 12.0991, pop: 204948 },
+      { name: 'Oldenburg', lat: 53.1435, lon: 8.2146, pop: 176242 },
+      { name: 'Osnabrück', lat: 52.2799, lon: 8.0472, pop: 165686 },
+      { name: 'Wolfsburg', lat: 52.4227, lon: 10.7865, pop: 129813 },
+      { name: 'Göttingen', lat: 51.5413, lon: 9.9158, pop: 126968 },
+      { name: 'Bremerhaven', lat: 53.5396, lon: 8.5809, pop: 118323 },
+      { name: 'Salzgitter', lat: 52.1508, lon: 10.3593, pop: 105056 },
+      { name: 'Schwerin', lat: 53.6355, lon: 11.4012, pop: 98733 },
+      { name: 'Hildesheim', lat: 52.1508, lon: 9.9519, pop: 98299 },
+      { name: 'Flensburg', lat: 54.7833, lon: 9.4333, pop: 96431 },
+      { name: 'Norderstedt', lat: 53.7017, lon: 10.0000, pop: 81834 },
+      { name: 'Delmenhorst', lat: 53.0481, lon: 8.6304, pop: 81274 },
+      { name: 'Neumünster', lat: 54.0725, lon: 9.9841, pop: 79461 },
+      { name: 'Wilhelmshaven', lat: 53.5289, lon: 8.1110, pop: 75324 },
+      { name: 'Lüneburg', lat: 53.2510, lon: 10.4141, pop: 74577 },
+      { name: 'Celle', lat: 52.6233, lon: 10.0800, pop: 66926 },
+      { name: 'Neubrandenburg', lat: 53.5575, lon: 13.2611, pop: 63935 },
+      { name: 'Greifswald', lat: 54.0865, lon: 13.3922, pop: 59332 },
+      { name: 'Stralsund', lat: 54.3091, lon: 13.0818, pop: 59102 },
+      { name: 'Lingen', lat: 52.5214, lon: 7.3197, pop: 56140 },
+      { name: 'Nordhorn', lat: 52.4308, lon: 7.0683, pop: 53910 },
+      { name: 'Elmshorn', lat: 53.7546, lon: 9.6534, pop: 51486 },
+      { name: 'Cuxhaven', lat: 53.8593, lon: 8.6879, pop: 49915 },
+      { name: 'Emden', lat: 53.3671, lon: 7.2061, pop: 49701 },
+      { name: 'Stade', lat: 53.6006, lon: 9.4761, pop: 48703 },
+      { name: 'Goslar', lat: 51.9060, lon: 10.4272, pop: 47649 },
+      { name: 'Pinneberg', lat: 53.6593, lon: 9.8005, pop: 44422 },
+      { name: 'Wismar', lat: 53.8923, lon: 11.4517, pop: 42772 },
+      { name: 'Walsrode', lat: 52.8625, lon: 9.5883, pop: 31019 },
+      { name: 'Soltau', lat: 52.9864, lon: 9.8434, pop: 22511 },
+      { name: 'Schneverdingen', lat: 53.1168, lon: 9.7952, pop: 19016 },
+      { name: 'Munster', lat: 52.9878, lon: 10.0860, pop: 15000 },
+      { name: 'Bad Fallingbostel', lat: 52.8664, lon: 9.6956, pop: 12783 },
+      { name: 'Bomlitz', lat: 52.9027, lon: 9.6603, pop: 7287 },
+      { name: 'Bispingen', lat: 53.1170, lon: 9.9940, pop: 6572 },
+      { name: 'Neuenkirchen', lat: 53.0333, lon: 9.7167, pop: 5365 },
+      { name: 'Schwarmstedt', lat: 52.6779, lon: 9.6177, pop: 5159 },
+      { name: 'Wietzendorf', lat: 52.9184, lon: 9.6932, pop: 4176 },
+      { name: 'Rotenburg (Wümme)', lat: 53.1109, lon: 9.4049, pop: 23211 },
+      { name: 'Bremervörde', lat: 53.4839, lon: 9.1425, pop: 18500 },
+      { name: 'Zeven', lat: 53.2904, lon: 9.2779, pop: 13898 },
+      { name: 'Scheeßel', lat: 53.1667, lon: 9.4833, pop: 12500 },
+      { name: 'Visselhövede', lat: 52.9861, lon: 9.5833, pop: 9700 },
+      { name: 'Gnarrenburg', lat: 53.3833, lon: 9.0167, pop: 9000 },
+      { name: 'Sittensen', lat: 53.2833, lon: 9.5000, pop: 5600 },
+      { name: 'Selsingen', lat: 53.3667, lon: 9.2167, pop: 3500 },
+      { name: 'Tarmstedt', lat: 53.2333, lon: 9.0833, pop: 3500 },
+      { name: 'Seevetal', lat: 53.3833, lon: 9.9667, pop: 42000 },
+      { name: 'Buchholz in der Nordheide', lat: 53.3264, lon: 9.8736, pop: 40000 },
+      { name: 'Winsen (Luhe)', lat: 53.3592, lon: 10.2069, pop: 35000 },
+      { name: 'Neu Wulmstorf', lat: 53.4667, lon: 9.7833, pop: 22000 },
+      { name: 'Tostedt', lat: 53.2833, lon: 9.7167, pop: 14000 },
+      { name: 'Rosengarten', lat: 53.4000, lon: 9.9167, pop: 13500 },
+      { name: 'Jesteburg', lat: 53.3000, lon: 9.9500, pop: 8000 },
+      { name: 'Hanstedt', lat: 53.2500, lon: 10.0167, pop: 5600 },
+      { name: 'Hollenstedt', lat: 53.3667, lon: 9.7833, pop: 3800 },
+      { name: 'Egestorf', lat: 53.1833, lon: 10.0333, pop: 2500 },
+      { name: 'Achim', lat: 53.0131, lon: 9.0356, pop: 32000 },
+      { name: 'Verden (Aller)', lat: 52.9211, lon: 9.2381, pop: 27700 },
+      { name: 'Oyten', lat: 53.0500, lon: 9.0167, pop: 16000 },
+      { name: 'Langwedel', lat: 52.9833, lon: 9.1833, pop: 14000 },
+      { name: 'Ottersberg', lat: 53.1167, lon: 9.1500, pop: 13000 },
+      { name: 'Kirchlinteln', lat: 52.9333, lon: 9.3167, pop: 10000 },
+      { name: 'Dörverden', lat: 52.8333, lon: 9.2333, pop: 9000 },
+      { name: 'Thedinghausen', lat: 52.9667, lon: 9.0167, pop: 7500 },
+      { name: 'Osterholz-Scharmbeck', lat: 53.2267, lon: 8.7944, pop: 30000 },
+      { name: 'Schwanewede', lat: 53.2333, lon: 8.5833, pop: 20000 },
+      { name: 'Lilienthal', lat: 53.1333, lon: 8.9000, pop: 20000 },
+      { name: 'Ritterhude', lat: 53.1833, lon: 8.7333, pop: 15000 },
+      { name: 'Worpswede', lat: 53.2167, lon: 8.9167, pop: 9500 },
+      { name: 'Grasberg', lat: 53.1833, lon: 8.9833, pop: 8000 },
+      { name: 'Buxtehude', lat: 53.4744, lon: 9.6892, pop: 40000 },
+      { name: 'Harsefeld', lat: 53.4500, lon: 9.5000, pop: 12500 },
+      { name: 'Jork', lat: 53.5333, lon: 9.6833, pop: 12000 },
+      { name: 'Drochtersen', lat: 53.7000, lon: 9.3833, pop: 11000 },
+      { name: 'Horneburg', lat: 53.5000, lon: 9.5833, pop: 8500 },
+      { name: 'Fredenbeck', lat: 53.5167, lon: 9.4000, pop: 6000 },
+      { name: 'Apensen', lat: 53.4167, lon: 9.6000, pop: 3300 },
+      { name: 'Stuhr', lat: 53.0333, lon: 8.7500, pop: 33000 },
+      { name: 'Weyhe', lat: 52.9833, lon: 8.8667, pop: 30000 },
+      { name: 'Syke', lat: 52.9131, lon: 8.8222, pop: 24000 },
+      { name: 'Bassum', lat: 52.8500, lon: 8.7333, pop: 16000 },
+      { name: 'Twistringen', lat: 52.8000, lon: 8.6333, pop: 13000 },
+      { name: 'Sulingen', lat: 52.6833, lon: 8.8000, pop: 13000 },
+      { name: 'Bruchhausen-Vilsen', lat: 52.8333, lon: 9.0000, pop: 7000 },
+      { name: 'Bergen', lat: 52.8167, lon: 9.9667, pop: 13000 },
+      { name: 'Winsen (Aller)', lat: 52.6833, lon: 9.9167, pop: 13000 },
+      { name: 'Hambühren', lat: 52.6333, lon: 9.9833, pop: 10000 },
+      { name: 'Wietze', lat: 52.6500, lon: 9.8333, pop: 8500 },
+      { name: 'Faßberg', lat: 52.9000, lon: 10.1667, pop: 6000 },
+      { name: 'Eschede', lat: 52.7333, lon: 10.2333, pop: 3700 },
+      { name: 'Uelzen', lat: 52.9647, lon: 10.5658, pop: 33000 },
+      { name: 'Bad Bevensen', lat: 53.0833, lon: 10.5833, pop: 8500 },
+      { name: 'Ebstorf', lat: 53.0333, lon: 10.4167, pop: 5000 },
+      { name: 'Suderburg', lat: 52.8833, lon: 10.4500, pop: 4500 },
+      { name: 'Wrestedt', lat: 52.9000, lon: 10.5333, pop: 4500 },
+      { name: 'Dortmund', lat: 51.5136, lon: 7.4653, pop: 586852 },
+      { name: 'Essen', lat: 51.4556, lon: 7.0116, pop: 582415 },
+      { name: 'Düsseldorf', lat: 51.2277, lon: 6.7735, pop: 619294 },
+      { name: 'Duisburg', lat: 51.4344, lon: 6.7623, pop: 495885 },
+      { name: 'Bochum', lat: 51.4818, lon: 7.2162, pop: 364628 },
+      { name: 'Wuppertal', lat: 51.2562, lon: 7.1508, pop: 355004 },
+      { name: 'Bielefeld', lat: 52.0302, lon: 8.5325, pop: 333786 },
+      { name: 'Bonn', lat: 50.7374, lon: 7.0982, pop: 330579 },
+      { name: 'Münster', lat: 51.9607, lon: 7.6261, pop: 314319 },
+      { name: 'Gelsenkirchen', lat: 51.5177, lon: 7.0857, pop: 259105 },
+      { name: 'Mönchengladbach', lat: 51.1805, lon: 6.4428, pop: 259996 },
+      { name: 'Aachen', lat: 50.7753, lon: 6.0839, pop: 249688 },
+      { name: 'Krefeld', lat: 51.3388, lon: 6.5853, pop: 227020 },
+      { name: 'Oberhausen', lat: 51.4696, lon: 6.8514, pop: 210829 },
+      { name: 'Hagen', lat: 51.3671, lon: 7.4633, pop: 188000 },
+      { name: 'Hamm', lat: 51.6739, lon: 7.8150, pop: 179000 },
+      { name: 'Leverkusen', lat: 51.0459, lon: 7.0192, pop: 163000 },
+      { name: 'Solingen', lat: 51.1652, lon: 7.0671, pop: 158000 },
+      { name: 'Herne', lat: 51.5388, lon: 7.2257, pop: 156000 },
+      { name: 'Neuss', lat: 51.1981, lon: 6.6889, pop: 153000 },
+      { name: 'Paderborn', lat: 51.7189, lon: 8.7575, pop: 151000 },
+      { name: 'Moers', lat: 51.4516, lon: 6.6265, pop: 104000 },
+      { name: 'Siegen', lat: 50.8748, lon: 8.0243, pop: 102000 },
+      { name: 'Gütersloh', lat: 51.9067, lon: 8.3787, pop: 100000 },
+      { name: 'Frankfurt am Main', lat: 50.1109, lon: 8.6821, pop: 753056 },
+      { name: 'Wiesbaden', lat: 50.0782, lon: 8.2398, pop: 278609 },
+      { name: 'Mainz', lat: 49.9929, lon: 8.2473, pop: 217118 },
+      { name: 'Kassel', lat: 51.3127, lon: 9.4797, pop: 200000 },
+      { name: 'Saarbrücken', lat: 49.2402, lon: 6.9969, pop: 180000 },
+      { name: 'Ludwigshafen', lat: 49.4774, lon: 8.4452, pop: 172000 },
+      { name: 'Darmstadt', lat: 49.8728, lon: 8.6512, pop: 159000 },
+      { name: 'Koblenz', lat: 50.3569, lon: 7.5890, pop: 114000 },
+      { name: 'Trier', lat: 49.7500, lon: 6.6371, pop: 110000 },
+      { name: 'Stuttgart', lat: 48.7758, lon: 9.1829, pop: 635911 },
+      { name: 'Karlsruhe', lat: 49.0069, lon: 8.4037, pop: 308436 },
+      { name: 'Mannheim', lat: 49.4875, lon: 8.4660, pop: 305658 },
+      { name: 'Freiburg', lat: 47.9990, lon: 7.8421, pop: 230940 },
+      { name: 'Heidelberg', lat: 49.3988, lon: 8.6724, pop: 160000 },
+      { name: 'Ulm', lat: 48.4011, lon: 9.9876, pop: 126000 },
+      { name: 'Nürnberg', lat: 49.4521, lon: 11.0767, pop: 517873 },
+      { name: 'Augsburg', lat: 48.3705, lon: 10.8978, pop: 295135 },
+      { name: 'Regensburg', lat: 49.0134, lon: 12.1016, pop: 152000 },
+      { name: 'Würzburg', lat: 49.7913, lon: 9.9534, pop: 128000 },
+      { name: 'Leipzig', lat: 51.3397, lon: 12.3731, pop: 587857 },
+      { name: 'Dresden', lat: 51.0504, lon: 13.7373, pop: 556780 },
+      { name: 'Chemnitz', lat: 50.8278, lon: 12.9214, pop: 246855 },
+      { name: 'Halle (Saale)', lat: 51.4825, lon: 11.9705, pop: 238762 },
+      { name: 'Magdeburg', lat: 52.1205, lon: 11.6276, pop: 235775 },
+      { name: 'Erfurt', lat: 50.9848, lon: 11.0299, pop: 213835 },
+      { name: 'Potsdam', lat: 52.3906, lon: 13.0645, pop: 183000 },
+      { name: 'Cottbus', lat: 51.7563, lon: 14.3329, pop: 100000 },
+      { name: 'Rotterdam', lat: 51.9225, lon: 4.4792, pop: 868135 },
+      { name: 'Den Haag', lat: 52.0767, lon: 4.2986, pop: 474292 },
+      { name: 'Utrecht', lat: 52.0908, lon: 5.1222, pop: 376435 },
+      { name: 'Groningen', lat: 53.2192, lon: 6.5667, pop: 244807 },
+      { name: 'Eindhoven', lat: 51.4408, lon: 5.4778, pop: 235691 },
+      { name: 'Tilburg', lat: 51.5555, lon: 5.0913, pop: 221947 },
+      { name: 'Breda', lat: 51.5866, lon: 4.7760, pop: 184126 },
+      { name: 'Nijmegen', lat: 51.8425, lon: 5.8528, pop: 177359 },
+      { name: 'Almere', lat: 52.3703, lon: 5.2141, pop: 176432 },
+      { name: 'Haarlem', lat: 52.3808, lon: 4.6368, pop: 162543 },
+      { name: 'Arnhem', lat: 51.9800, lon: 5.9111, pop: 159818 },
+      { name: 'Enschede', lat: 52.2183, lon: 6.8958, pop: 158004 },
+      { name: 'Zwolle', lat: 52.5125, lon: 6.0944, pop: 127497 },
+      { name: 'Leeuwarden', lat: 53.2012, lon: 5.7999, pop: 124481 },
+      { name: 'Assen', lat: 52.9967, lon: 6.5625, pop: 67963 }
+    ];
+
+    const LANDMARKS = [
+      { name: 'Brocken', lat: 51.7990, lon: 10.6156, elevation: 1141, type: 'mountain' },
+      { name: 'Zugspitze', lat: 47.4212, lon: 10.9863, elevation: 2962, type: 'mountain' },
+      { name: 'Wilseder Berg', lat: 53.1676, lon: 9.9398, elevation: 169, type: 'mountain' },
+      { name: 'Helgoland', lat: 54.1821, lon: 7.8846, type: 'water' },
+      { name: 'Zingst', lat: 54.4387, lon: 12.6821, type: 'water' }
+    ];
+
+    const DEFAULT_LOCATION = { name: 'Neuenkirchen‑Tewel', lat: 53.0333, lon: 9.7167 };
+    const ZOOM = 8;
+    const STORAGE_KEY_CURRENT = 'wetter_current';
+    const STORAGE_KEY_FAV = 'wetter_favorites';
+    const MAX_FAVORITES = 5;
+    const RADAR_AUTOPLAY = false;  // true = Autoplay beim Laden, false = manuell per Play-Button
+    let currentLocation = { ...DEFAULT_LOCATION };
+    let favorites = [];
+    let favTemps = {};
+    let userInteracted = false;
+
+    function debounce(fn, delay) {
+      let timer = null;
+      return (...args) => {
+        clearTimeout(timer);
+        timer = setTimeout(() => fn(...args), delay);
+      };
+    }
+
+    function loadStoredState() {
+      try {
+        const s = localStorage.getItem(STORAGE_KEY_CURRENT);
+        if (s) currentLocation = JSON.parse(s);
+        const f = localStorage.getItem(STORAGE_KEY_FAV);
+        if (f) favorites = JSON.parse(f);
+      } catch (e) { console.warn(e); }
+    }
+
+    function saveCurrentLocation() {
+      try { localStorage.setItem(STORAGE_KEY_CURRENT, JSON.stringify(currentLocation)); }
+      catch (e) { console.warn(e); }
+    }
+
+    function saveFavorites() {
+      try { localStorage.setItem(STORAGE_KEY_FAV, JSON.stringify(favorites)); }
+      catch (e) { console.warn(e); }
+    }
+
+    function isSameAsCurrent(city) {
+      const a = (city.name || '').trim().toLowerCase();
+      const b = (currentLocation.name || '').trim().toLowerCase();
+      if (a && b && a === b) return true;
+      return Math.abs(city.lat - currentLocation.lat) < 0.02 &&
+             Math.abs(city.lon - currentLocation.lon) < 0.02;
+    }
+
+    document.addEventListener('DOMContentLoaded', initApp);
+
+    function initApp() {
+      const container = document.getElementById('radar-map');
+      if (!container) return;
+
+      loadStoredState();
+
+      // Radar-State (muss vor updateCitiesInView deklariert sein)
+      let radarLayers = [];
+      let allFrames = [];
+      let pastFrameCount = 0;
+      let radarHost = 'https://api.librewxr.net'; // Fallback, wird überschrieben
+      let currentFrameIndex = -1;
+      let animationInterval = null;
+      let isPlaying = false;
+      let wasPlayingBeforeHide = false;
+
+      // Städte-Temperatur-State
+      let cityTempCache = {};
+      let currentCityMarkers = [];
+      let lastFrameTime = null;
+
+      const map = L.map(container, {
+        zoomControl: false,
+        attributionControl: false
+      }).setView([currentLocation.lat, currentLocation.lon], ZOOM);
+
+      L.control.zoom({ position: 'topright' }).addTo(map);
+
+      L.tileLayer(
+        'https://services.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}',
+        { maxZoom: 16 }
+      ).addTo(map);
+
+      setTimeout(() => map.invalidateSize(), 200);
+
+      // Leaflet an Containergröße anpassen – bei Skeleton, Datenload und Animation
+      let radarResizeTimer = null;
+      function scheduleRadarInvalidate() {
+        if (radarResizeTimer) return;
+        radarResizeTimer = setTimeout(() => {
+          radarResizeTimer = null;
+          if (map && map._container) map.invalidateSize({ pan: false });
+        }, 100);
+      }
+      if (typeof ResizeObserver !== 'undefined') {
+        const ro = new ResizeObserver(scheduleRadarInvalidate);
+        ro.observe(container);
+      }
+
+      const timeOverlay = document.createElement('div');
+      timeOverlay.className = 'radar-time-overlay';
+      timeOverlay.id = 'radar-time-overlay';
+      timeOverlay.textContent = 'Radar · –';
+      container.appendChild(timeOverlay);
+
+      const redPinSvg = `
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 25 41" width="25" height="41">
+          <path fill="#E53935" stroke="#B71C1C" stroke-width="1.5"
+                d="M12.5 0C5.6 0 0 5.6 0 12.5c0 9.4 12.5 28.5 12.5 28.5S25 21.9 25 12.5C25 5.6 19.4 0 12.5 0z"/>
+          <circle cx="12.5" cy="12.5" r="4.5" fill="#ffffff"/>
+        </svg>
+      `;
+      const redIcon = L.icon({
+        iconUrl: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(redPinSvg),
+        iconSize: [25, 41],
+        iconAnchor: [12, 41],
+        tooltipAnchor: [10, -22]
+      });
+
+      const currentMarker = L.marker(
+        [currentLocation.lat, currentLocation.lon],
+        { icon: redIcon }
+      ).addTo(map);
+
+      currentMarker.bindTooltip(currentLocation.name, {
+        permanent: true,
+        direction: 'right',
+        offset: [0, 0],
+        className: 'current-location-label'
+      });
+
+      const cityGroup = L.layerGroup().addTo(map);
+      const landmarkGroup = L.layerGroup().addTo(map);
+      const landmarkMarkers = [];
+
+      const triangleSvg = `
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" width="20" height="20">
+          <polygon points="10,2 19,18 1,18" fill="#8D6E63" stroke="#4E342E"
+                   stroke-width="1.5" stroke-linejoin="round"/>
+        </svg>
+      `;
+      const mountainIcon = L.divIcon({
+        html: triangleSvg,
+        className: 'landmark-icon',
+        iconSize: [20, 20],
+        iconAnchor: [10, 18]
+      });
+
+      const waveSvg = `
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="22" height="22">
+          <path d="M2 15 Q6 10 10 15 T18 15 T22 15" fill="none" stroke="#1565C0"
+                stroke-width="2.5" stroke-linecap="round"/>
+          <path d="M2 20 Q6 15 10 20 T18 20 T22 20" fill="none" stroke="#42A5F5"
+                stroke-width="2" stroke-linecap="round" opacity="0.7"/>
+        </svg>
+      `;
+      const waterIcon = L.divIcon({
+        html: waveSvg,
+        className: 'landmark-icon',
+        iconSize: [22, 22],
+        iconAnchor: [11, 16]
+      });
+
+      function renderLandmarkMarkers() {
+        LANDMARKS.forEach(lm => {
+          const icon = lm.type === 'water' ? waterIcon : mountainIcon;
+          const marker = L.marker([lm.lat, lm.lon], { icon });
+          const prefix = lm.type === 'water' ? '🌊 ' : '';
+          marker.bindTooltip(`${prefix}${lm.name}`, {
+            permanent: true,
+            direction: 'right',
+            offset: [10, -6],
+            className: 'city-label'
+          });
+          marker.addTo(landmarkGroup);
+          landmarkMarkers.push({ lm, marker });
+        });
+      }
+
+      async function updateMountainTemps() {
+        const mountains = landmarkMarkers.filter(m => m.lm.type === 'mountain');
+        if (mountains.length === 0) return;
+        try {
+          const url = new URL('https://api.open-meteo.com/v1/forecast');
+          url.searchParams.set('latitude', mountains.map(m => m.lm.lat).join(','));
+          url.searchParams.set('longitude', mountains.map(m => m.lm.lon).join(','));
+          url.searchParams.set('elevation', mountains.map(m => m.lm.elevation).join(','));
+          url.searchParams.set('current', 'temperature_2m');
+          url.searchParams.set('timezone', 'Europe/Berlin');
+          const resp = await fetch(url);
+          if (!resp.ok) throw new Error('HTTP ' + resp.status);
+          const data = await resp.json();
+          const results = Array.isArray(data) ? data : [data];
+          mountains.forEach((m, idx) => {
+            const t = results[idx]?.current?.temperature_2m;
+            if (t !== null && t !== undefined) {
+              m.marker.setTooltipContent(
+                `<span class="city-name">${m.lm.name}</span>` +
+                `<span class="city-temp">${Math.round(t)}°C</span>`
+              );
+            }
+          });
+        } catch (err) { console.warn('[Berge]', err); }
+      }
+
+      async function updateWaterTemps() {
+        const waters = landmarkMarkers.filter(m => m.lm.type === 'water');
+        if (waters.length === 0) return;
+        try {
+          const url = new URL('https://marine-api.open-meteo.com/v1/marine');
+          url.searchParams.set('latitude', waters.map(m => m.lm.lat).join(','));
+          url.searchParams.set('longitude', waters.map(m => m.lm.lon).join(','));
+          url.searchParams.set('current', 'sea_surface_temperature');
+          url.searchParams.set('timezone', 'Europe/Berlin');
+          const resp = await fetch(url);
+          if (!resp.ok) throw new Error('HTTP ' + resp.status);
+          const data = await resp.json();
+          const results = Array.isArray(data) ? data : [data];
+          waters.forEach((m, idx) => {
+            const t = results[idx]?.current?.sea_surface_temperature;
+            if (t !== null && t !== undefined) {
+              m.marker.setTooltipContent(
+                `<span class="city-name">🌊 ${m.lm.name}</span>` +
+                `<span class="city-temp">${Math.round(t)}°C</span>`
+              );
+            }
+          });
+        } catch (err) { console.warn('[Wasser]', err); }
+      }
+
+      // Lineare Interpolation zwischen zwei Stundenwerten.
+      function interpolateHourly(hourly, targetUnix) {
+        if (!hourly || hourly.length === 0) return null;
+        if (targetUnix <= hourly[0].time) return Math.round(hourly[0].temp);
+        const last = hourly[hourly.length - 1];
+        if (targetUnix >= last.time) return Math.round(last.temp);
+        for (let i = 0; i < hourly.length - 1; i++) {
+          if (targetUnix >= hourly[i].time && targetUnix <= hourly[i + 1].time) {
+            const frac = (targetUnix - hourly[i].time) / (hourly[i + 1].time - hourly[i].time);
+            return Math.round(hourly[i].temp + frac * (hourly[i + 1].temp - hourly[i].temp));
+          }
+        }
+        return null;
+      }
+
+      // Setzt die Tooltips der sichtbaren Städte auf den Frame-Zeitpunkt.
+      function updateCityTempsForFrame(useCurrent) {
+        if (currentCityMarkers.length === 0) return;
+        const frameUnix = lastFrameTime !== null ? lastFrameTime : Date.now() / 1000;
+
+        currentCityMarkers.forEach(entry => {
+          const { city, circle } = entry;
+          const data = cityTempCache[city.name];
+          if (!data) return;
+
+          let temp;
+          if (useCurrent) {
+            if (data.now === null || data.now === undefined) return;
+            temp = Math.round(data.now);
+          } else {
+            temp = interpolateHourly(data.hourly, frameUnix);
+          }
+          if (temp === null || temp === undefined) return;
+
+          if (entry.lastTemp === temp) return;
+          entry.lastTemp = temp;
+
+          circle.setTooltipContent(
+            `<span class="city-name">${city.name}</span>` +
+            `<span class="city-temp">${temp}°C</span>`
+          );
+        });
+      }
+
+      let cityUpdateToken = 0;
+
+      async function updateCitiesInView() {
+        const token = ++cityUpdateToken;
+        const bounds = map.getBounds();
+        const top10 = LOCAL_CITIES
+          .filter(city => bounds.contains([city.lat, city.lon]) && !isSameAsCurrent(city))
+          .sort((a, b) => b.pop - a.pop)
+          .slice(0, 10);
+
+        cityGroup.clearLayers();
+
+        const markers = top10.map(city => {
+          const radius = Math.min(7, 3 + Math.log10(city.pop / 1000) * 1.5);
+          const circle = L.circleMarker([city.lat, city.lon], {
+            radius, color: '#0A4D8C', fillColor: '#0A4D8C',
+            fillOpacity: 0.9, weight: 1.5
+          });
+          circle.bindTooltip(city.name, {
+            permanent: true, direction: 'right',
+            offset: [radius + 3, 0], className: 'city-label'
+          });
+          circle.addTo(cityGroup);
+          return { city, circle, lastTemp: undefined };
+        });
+
+        currentCityMarkers = markers;
+
+        if (markers.length === 0) return;
+
+        try {
+          const url = new URL('https://api.open-meteo.com/v1/forecast');
+          url.searchParams.set('latitude', markers.map(m => m.city.lat).join(','));
+          url.searchParams.set('longitude', markers.map(m => m.city.lon).join(','));
+          url.searchParams.set('current', 'temperature_2m');
+          url.searchParams.set('hourly', 'temperature_2m');
+          url.searchParams.set('past_hours', '4');
+          url.searchParams.set('forecast_hours', '3');
+          url.searchParams.set('timezone', 'Europe/Berlin');
+          url.searchParams.set('timeformat', 'unixtime');
+
+          const resp = await fetch(url);
+          if (!resp.ok) throw new Error('HTTP ' + resp.status);
+          const data = await resp.json();
+          const results = Array.isArray(data) ? data : [data];
+          if (token !== cityUpdateToken) return;
+
+          const validNames = new Set(markers.map(m => m.city.name));
+          Object.keys(cityTempCache).forEach(k => {
+            if (!validNames.has(k)) delete cityTempCache[k];
+          });
+
+          markers.forEach((m, idx) => {
+            const entry = results[idx];
+            if (!entry) return;
+            const now = entry.current?.temperature_2m;
+            const hTime = entry.hourly?.time;
+            const hTemp = entry.hourly?.temperature_2m;
+            if (now === null || now === undefined) return;
+            if (!Array.isArray(hTime) || !Array.isArray(hTemp) || hTime.length !== hTemp.length) return;
+
+            const hourly = hTime.map((t, i) => ({ time: t, temp: hTemp[i] }));
+            cityTempCache[m.city.name] = { now, hourly };
+          });
+
+          const useCurrent = currentFrameIndex === -1 || currentFrameIndex === pastFrameCount - 1;
+          updateCityTempsForFrame(useCurrent);
+
+        } catch (err) { console.warn('[Städte]', err); }
+      }
+
+      map.on('moveend', debounce(updateCitiesInView, 150));
+      updateCitiesInView();
+
+      const slider = document.getElementById('tl-slider');
+      const ticksContainer = document.getElementById('tl-ticks');
+      const playBtn = document.getElementById('play-pause-btn');
+      const startLabel = document.getElementById('tl-start-label');
+      const endLabel = document.getElementById('tl-end-label');
+
+      function formatFrameTime(unixSeconds) {
+        return new Date(unixSeconds * 1000)
+          .toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+      }
+
+      function clearRadarLayers() {
+        radarLayers.forEach(layer => { if (map.hasLayer(layer)) map.removeLayer(layer); });
+        radarLayers = [];
+      }
+
+      async function loadRadar() {
+        try {
+          // LibreWXR: Drop-in-Ersatz für RainViewer v2
+          const resp = await fetch('https://api.librewxr.net/public/weather-maps.json');
+          const data = await resp.json();
+          if (data.host) radarHost = data.host;
+          const past = (data.radar && data.radar.past) || [];
+          const nowcast = (data.radar && data.radar.nowcast) || [];
+          pastFrameCount = past.length;
+          allFrames = [...past, ...nowcast];
+
+          if (allFrames.length === 0) {
+            showRadarMessage('Keine Radar-Frames verfügbar.');
+            return;
+          }
+
+          clearRadarLayers();
+          radarLayers = allFrames.map((frame, i) => {
+            const tileUrl = `${radarHost}${frame.path}/256/{z}/{x}/{y}/2/1_1.png`;
+            const layer = L.tileLayer(tileUrl, {
+              opacity: 0,
+              className: 'radar-tiles',
+              maxNativeZoom: 7,
+              maxZoom: 19
+            });
+            layer.on('tileerror', (e) => console.warn('[Radar] Kachel-Fehler:', e.tile && e.tile.src));
+            layer.addTo(map);
+            return layer;
+          });
+
+          buildTimeline();
+          setRadarFrame(past.length > 0 ? past.length - 1 : 0, true);
+
+          if (RADAR_AUTOPLAY && allFrames.length > 1) {
+            setTimeout(() => {
+              if (!isPlaying && !userInteracted && !document.hidden) {
+                setRadarFrame(pastFrameCount > 0 ? pastFrameCount - 1 : 0, true);
+                playAnimation();
+              }
+            }, 800);
+          }
+        } catch (err) {
+          console.error('[Radar] Fehler:', err);
+          showRadarMessage('Radar-Daten konnten nicht geladen werden.');
+        }
+      }
+
+      function buildTimeline() {
+        slider.min = 0;
+        slider.max = allFrames.length - 1;
+        slider.value = pastFrameCount > 0 ? pastFrameCount - 1 : 0;
+        ticksContainer.innerHTML = '';
+        const n = allFrames.length;
+        for (let i = 0; i < n; i++) {
+          const tick = document.createElement('div');
+          tick.className = 'tl-tick' + (i >= pastFrameCount ? ' nowcast' : '');
+          tick.style.left = n > 1 ? `${(i / (n - 1)) * 100}%` : '50%';
+          ticksContainer.appendChild(tick);
+        }
+        startLabel.textContent = n > 0 ? formatFrameTime(allFrames[0].time) : '–';
+        endLabel.textContent = n > 0 ? formatFrameTime(allFrames[n - 1].time) : '–';
+        updateSliderTrackBackground();
+      }
+
+      function updateSliderTrackBackground() {
+        const n = allFrames.length;
+        if (n <= 1 || pastFrameCount >= n) {
+          slider.style.setProperty('--slider-track-bg', '#90a4ae'); return;
+        }
+        if (pastFrameCount === 0) {
+          slider.style.setProperty('--slider-track-bg', '#FFD966'); return;
+        }
+        const pastPercent = ((pastFrameCount -1) /  (n-1)) * 100;
+        slider.style.setProperty('--slider-track-bg',
+          `linear-gradient(to right, #90a4ae 0%, #90a4ae ${pastPercent}%, #FFD966 ${pastPercent}%, #FFD966 100%)`);
+      }
+
+      function setRadarFrame(index, force = false) {
+        if (index < 0 || index >= radarLayers.length) return;
+        if (!force && index === currentFrameIndex) return;
+        if (currentFrameIndex >= 0 && radarLayers[currentFrameIndex]) {
+          radarLayers[currentFrameIndex].setOpacity(0);
+        }
+        radarLayers[index].setOpacity(0.8);
+        currentFrameIndex = index;
+        lastFrameTime = allFrames[index].time;
+
+        updateTimestamp();
+        slider.value = index;
+
+        updateCityTempsForFrame(index === pastFrameCount - 1);
+      }
+
+      function updateTimestamp() {
+        if (allFrames.length === 0 || currentFrameIndex < 0) return;
+        const frame = allFrames[currentFrameIndex];
+        const timeStr = formatFrameTime(frame.time);
+        const isNowcast = currentFrameIndex >= pastFrameCount;
+        timeOverlay.textContent = isNowcast
+          ? `Radar (Prognose) · ${timeStr} Uhr`
+          : `Radar · ${timeStr} Uhr`;
+      }
+
+      slider.addEventListener('input', () => {
+        userInteracted = true;
+        const idx = parseInt(slider.value, 10);
+        if (isPlaying) pauseAnimation();
+        setRadarFrame(idx, true);
+      });
+
+      function playAnimation() {
+        if (radarLayers.length <= 1) return;
+        if (animationInterval) clearInterval(animationInterval);
+        if (currentFrameIndex >= radarLayers.length - 1) setRadarFrame(0, true);
+        animationInterval = setInterval(() => {
+          let next = currentFrameIndex + 1;
+          if (next >= radarLayers.length) next = 0;
+          setRadarFrame(next);
+        }, 600);
+        isPlaying = true;
+        playBtn.textContent = '⏸';
+        playBtn.title = 'Pause';
+      }
+
+      function pauseAnimation() {
+        if (animationInterval) clearInterval(animationInterval);
+        animationInterval = null;
+        isPlaying = false;
+        playBtn.textContent = '▶';
+        playBtn.title = 'Abspielen';
+      }
+
+      playBtn.addEventListener('click', () => {
+        userInteracted = true;
+        isPlaying ? pauseAnimation() : playAnimation();
+      });
+
+      document.addEventListener('visibilitychange', () => {
+        if (document.hidden) {
+          wasPlayingBeforeHide = isPlaying;
+          if (isPlaying) pauseAnimation();
+        } else if (wasPlayingBeforeHide) {
+          playAnimation();
+        }
+      });
+
+      function showRadarMessage(text) {
+        const old = container.querySelector('.radar-message');
+        if (old) old.remove();
+        const div = document.createElement('div');
+        div.className = 'radar-message';
+        div.style.cssText = `
+          position: absolute; z-index: 999; top: 3.5rem; left: 1rem; right: 1rem;
+          background: #fff; color: #1E2A3A; border-left: 4px solid #D32F2F;
+          padding: 0.8rem 1rem; border-radius: 6px; font-size: 0.85rem;
+          box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+        `;
+        div.textContent = text;
+        container.appendChild(div);
+      }
+
+      function weatherCodeToEmoji(code, isDay = true) {
+        switch (code) {
+          case 0:  return isDay ? '☀️' : '🌙';
+          case 1:  return isDay ? '🌤️' : '🌙';
+          case 2:  return '⛅';
+          case 3:  return '☁️';
+          case 45: case 48: return '🌫️';
+          case 51: case 53: case 55: return '🌦️';
+          case 56: case 57: case 61: case 63: case 65: case 66: case 67: return '🌧️';
+          case 71: case 73: case 75: case 77: case 85: case 86: return '🌨️';
+          case 80: case 81: case 82: return '🌦️';
+          case 95: case 96: case 99: return '⛈️';
+          default: return '❓';
+        }
+      }
+
+      function rainColor(prob) {
+        if (prob < 25) return '#64B5F6';
+        if (prob < 50) return '#2196F3';
+        if (prob < 75) return '#1565C0';
+        return '#0D47A1';
+      }
+
+      async function loadForecast(lat, lon) {
+        const url = new URL('https://api.open-meteo.com/v1/forecast');
+        url.searchParams.set('latitude', lat);
+        url.searchParams.set('longitude', lon);
+        url.searchParams.set('hourly', 'temperature_2m,weather_code,precipitation_probability');
+        url.searchParams.set('timezone', 'Europe/Berlin');
+        url.searchParams.set('forecast_hours', '24');
+        try {
+          const resp = await fetch(url);
+          const data = await resp.json();
+          if (!data.hourly || !data.hourly.time) throw new Error('Ungültige Antwort');
+          renderHourlyForecastTable(data.hourly);
+        } catch (err) {
+          console.error('[Forecast] Fehler:', err);
+          document.getElementById('forecast-table').innerHTML =
+            '<tbody><tr><td colspan="4">Vorhersage konnte nicht geladen werden.</td></tr></tbody>';
+        }
+      }
+
+      function renderHourlyForecastTable(hourly) {
+        const table = document.getElementById('forecast-table');
+        const indices = [];
+        hourly.time.forEach((timeStr, i) => {
+          if (new Date(timeStr).getHours() % 3 === 0) indices.push(i);
+        });
+        const selected = indices.slice(0, 8);
+
+        const makeCell = (i) => {
+          const date = new Date(hourly.time[i]);
+          const hh = String(date.getHours()).padStart(2, '0');
+          const mm = String(date.getMinutes()).padStart(2, '0');
+          const temp = Math.round(hourly.temperature_2m[i]);
+          const code = hourly.weather_code ? hourly.weather_code[i] : null;
+          const rain = hourly.precipitation_probability ? hourly.precipitation_probability[i] : null;
+          const isDay = date.getHours() >= 6 && date.getHours() < 20;
+          const emoji = code !== null ? weatherCodeToEmoji(code, isDay) : '';
+          const tempClass = temp > 0 ? 'pos' : 'neg';
+          const rainHtml = (rain !== null && rain !== undefined)
+            ? `<span class="fc-rain"><span class="rain-dot" style="background:${rainColor(Math.round(rain))}"></span>${Math.round(rain)}%</span>`
+            : `<span class="fc-rain"><span class="rain-dot" style="background:#cfd8e3"></span>–</span>`;
+          return `
+            <td>
+              <span class="fc-time">${hh}:${mm}</span>
+              <span class="fc-icon">${emoji}</span>
+              <span class="fc-temp ${tempClass}">${temp}°C</span>
+              ${rainHtml}
+            </td>`;
+        };
+
+        let html = '<tbody>';
+        for (let row = 0; row < 2; row++) {
+          html += '<tr>';
+          for (let col = 0; col < 4; col++) {
+            const idx = selected[row * 4 + col];
+            html += (idx !== undefined) ? makeCell(idx) : '<td>–</td>';
+          }
+          html += '</tr>';
+        }
+        html += '</tbody>';
+        table.innerHTML = html;
+        requestAnimationFrame(scheduleRadarInvalidate);
+      }
+
+      function getMostFrequent(arr) {
+        if (arr.length === 0) return 0;
+        const counts = {};
+        let maxCount = 0;
+        let mode = arr[0];
+        arr.forEach(val => {
+          counts[val] = (counts[val] || 0) + 1;
+          if (counts[val] > maxCount) { maxCount = counts[val]; mode = val; }
+        });
+        return mode;
+      }
+
+      function getAverageWindDir(dirs) {
+        if (dirs.length === 0) return 0;
+        let sumSin = 0, sumCos = 0;
+        dirs.forEach(dir => {
+          const rad = dir * Math.PI / 180;
+          sumSin += Math.sin(rad);
+          sumCos += Math.cos(rad);
+        });
+        const avgRad = Math.atan2(sumSin / dirs.length, sumCos / dirs.length);
+        let avgDeg = avgRad * 180 / Math.PI;
+        if (avgDeg < 0) avgDeg += 360;
+        return avgDeg;
+      }
+
+      function getWindArrow(dir, speed) {
+        const speedKmh = Math.round(speed);
+        return `
+          <div class="wind-container">
+            <svg viewBox="0 0 24 24" style="transform: rotate(${dir}deg);">
+              <path d="M12 2 L12 22 M12 2 L6 10 M12 2 L18 10" stroke="#4a4a4a" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            <span>${speedKmh} km/h</span>
+          </div>`;
+      }
+
+      async function loadDailyForecast(lat, lon) {
+        const url = new URL('https://api.open-meteo.com/v1/forecast');
+        url.searchParams.set('latitude', lat);
+        url.searchParams.set('longitude', lon);
+        url.searchParams.set('daily', 'weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,sunshine_duration');
+        url.searchParams.set('hourly', 'weather_code,precipitation_probability,windspeed_10m,winddirection_10m');
+        url.searchParams.set('forecast_days', '4');
+        url.searchParams.set('timezone', 'Europe/Berlin');
+        try {
+          const resp = await fetch(url);
+          const data = await resp.json();
+          if (!data.daily || !data.hourly) throw new Error('Ungültige Antwort');
+          renderDailyForecast(data.daily, data.hourly);
+        } catch (err) {
+          console.error('[Daily Forecast] Fehler:', err);
+          document.getElementById('daily-forecast-grid').innerHTML = '<div>Vorhersage konnte nicht geladen werden.</div>';
+        }
+      }
+
+      function renderDailyForecast(daily, hourly) {
+        const container = document.getElementById('daily-forecast-grid');
+        container.innerHTML = '';
+        const days = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'];
+
+        for (let i = 0; i < 4; i++) {
+          const date = new Date(daily.time[i]);
+          const dayName = days[date.getDay()];
+          const dateStr = date.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' });
+          const isToday = i === 0;
+          const relativeText = isToday ? '(heute)' : (i === 1 ? '(morgen)' : '');
+
+          const maxTemp = Math.round(daily.temperature_2m_max[i]);
+          const minTemp = Math.round(daily.temperature_2m_min[i]);
+          const sunHours = Math.round((daily.sunshine_duration[i] || 0) / 3600);
+          const rainProb = daily.precipitation_probability_max[i] || 0;
+
+          const slots = [
+            { label: 'Vormittag', start: 6, end: 12 },
+            { label: 'Mittag', start: 12, end: 16 },
+            { label: 'Abend', start: 16, end: 20 },
+            { label: 'Nacht', start: 0, end: 6 }
+          ];
+
+          let slotsHtml = '';
+          slots.forEach(slot => {
+            const indices = [];
+            hourly.time.forEach((timeStr, idx) => {
+              if (timeStr.startsWith(daily.time[i])) {
+                const h = new Date(timeStr).getHours();
+                if (h >= slot.start && h < slot.end) indices.push(idx);
+              }
+            });
+
+            let emoji = '❓';
+            let windHtml = '–';
+
+            if (indices.length > 0) {
+              const dominantCode = getMostFrequent(indices.map(idx => hourly.weather_code[idx]));
+              const isDay = slot.start >= 6 && slot.start < 20;
+              emoji = weatherCodeToEmoji(dominantCode, isDay);
+
+              const windspeeds = indices.map(idx => hourly.windspeed_10m[idx]);
+              const winddirs = indices.map(idx => hourly.winddirection_10m[idx]);
+              const avgWindSpeed = windspeeds.reduce((a, b) => a + b, 0) / windspeeds.length || 0;
+              const avgWindDir = getAverageWindDir(winddirs);
+
+              windHtml = getWindArrow(avgWindDir, avgWindSpeed);
+            }
+
+            slotsHtml += `
+              <div class="time-block">
+                <div class="icon-wind">
+                  <span class="slot-icon">${emoji}</span>
+                  ${windHtml}
+                </div>
+                <div class="slot-label">${slot.label}</div>
+              </div>`;
+          });
+
+          const html = `
+            <div class="daily-col">
+              <div class="row-datum">${dateStr}.</div>
+              <div class="row-wochentag">${dayName} <span class="rel">${relativeText}</span></div>
+              <div class="row-max">max ${maxTemp}°</div>
+              <hr class="row-separator">
+              <div class="row-min">min ${minTemp}°</div>
+              ${slotsHtml}
+              <div class="row-sun">☀️ ${sunHours} h</div>
+              <div class="row-rain">💧 ${rainProb} %</div>
+            </div>`;
+          container.innerHTML += html;
+        }
+        requestAnimationFrame(scheduleRadarInvalidate);
+      }
+
+      function switchLocation(name, lat, lon) {
+        currentLocation = { name, lat, lon };
+        currentMarker.setLatLng([lat, lon]);
+        currentMarker.setTooltipContent(name);
+        map.setView([lat, lon], map.getZoom());
+        document.getElementById('current-location-name').textContent = name;
+        document.getElementById('forecast-location').textContent = name;
+        updateCitiesInView();
+        loadForecast(lat, lon);
+        loadDailyForecast(lat, lon);
+        saveCurrentLocation();
+      }
+
+      function renderFavorites() {
+        const favContainer = document.getElementById('favorites-list');
+        favContainer.innerHTML = '';
+
+        for (let i = 0; i < MAX_FAVORITES; i++) {
+          const fav = favorites[i];
+          const btn = document.createElement('button');
+          btn.className = 'fav-btn' + (fav ? '' : ' empty');
+
+          if (fav) {
+            const temp = favTemps[fav.name];
+            const tempHtml = (temp !== undefined) ? `<span class="fav-temp">${temp}°</span>` : '';
+            btn.innerHTML = `<span>${fav.name}</span>${tempHtml}<span class="fav-remove" title="Entfernen">×</span>`;
+            btn.title = `${fav.name} – klicken zum Wechseln, × zum Entfernen`;
+            btn.addEventListener('click', (ev) => {
+              if (ev.target.classList.contains('fav-remove')) {
+                delete favTemps[fav.name];
+                favorites.splice(i, 1);
+                saveFavorites();
+                renderFavorites();
+                updateFavoriteTemps();
+              } else {
+                switchLocation(fav.name, fav.lat, fav.lon);
+              }
+            });
+          } else {
+            btn.textContent = '+';
+            btn.title = 'Aktuellen Ort als Favorit speichern';
+            btn.addEventListener('click', () => {
+              const exists = favorites.some(f =>
+                Math.abs(f.lat - currentLocation.lat) < 0.01 &&
+                Math.abs(f.lon - currentLocation.lon) < 0.01
+              );
+              if (exists) { alert('Dieser Ort ist bereits als Favorit gespeichert.'); return; }
+              if (favorites.length >= MAX_FAVORITES) { alert('Maximal 5 Favoriten.'); return; }
+              favorites.push({ ...currentLocation });
+              saveFavorites();
+              renderFavorites();
+              updateFavoriteTemps();
+            });
+          }
+          favContainer.appendChild(btn);
+        }
+      }
+
+      async function updateFavoriteTemps() {
+        const validFavs = favorites.filter(f => f && f.name && f.lat !== undefined && f.lon !== undefined);
+        if (validFavs.length === 0) { favTemps = {}; renderFavorites(); return; }
+        const url = new URL('https://api.open-meteo.com/v1/forecast');
+        url.searchParams.set('latitude', validFavs.map(f => f.lat).join(','));
+        url.searchParams.set('longitude', validFavs.map(f => f.lon).join(','));
+        url.searchParams.set('current', 'temperature_2m');
+        url.searchParams.set('timezone', 'Europe/Berlin');
+        try {
+          const resp = await fetch(url);
+          if (!resp.ok) throw new Error('HTTP ' + resp.status);
+          const data = await resp.json();
+          const results = Array.isArray(data) ? data : [data];
+          const newTemps = {};
+          results.forEach((entry, idx) => {
+            const fav = validFavs[idx];
+            if (!fav) return;
+            const t = entry?.current?.temperature_2m;
+            if (t !== undefined && t !== null) newTemps[fav.name] = Math.round(t);
+          });
+          favTemps = newTemps;
+          renderFavorites();
+        } catch (err) {
+          console.warn('[Favoriten]', err);
+          favTemps = {};
+          renderFavorites();
+        }
+      }
+
+      const searchInput = document.getElementById('location-search');
+      const searchResults = document.getElementById('search-results');
+      const searchBtn = document.getElementById('search-btn');
+
+      async function performSearch() {
+        const query = searchInput.value.trim();
+        if (!query) return;
+        searchResults.innerHTML = '<div class="search-result-item">Suche läuft…</div>';
+        searchResults.style.display = 'block';
+        try {
+          const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=6&addressdetails=1&accept-language=de`;
+          const resp = await fetch(url, { headers: { 'Accept': 'application/json' } });
+          if (!resp.ok) throw new Error('HTTP ' + resp.status);
+          displaySearchResults(await resp.json());
+        } catch (err) {
+          console.error('[Suche]', err);
+          searchResults.innerHTML = '<div class="search-result-item">Suche fehlgeschlagen.</div>';
+        }
+      }
+
+      function displaySearchResults(results) {
+        searchResults.innerHTML = '';
+        if (!results || results.length === 0) {
+          searchResults.innerHTML = '<div class="search-result-item">Keine Treffer.</div>';
+          return;
+        }
+        results.forEach(r => {
+          const item = document.createElement('div');
+          item.className = 'search-result-item';
+          item.textContent = r.display_name;
+          item.addEventListener('click', () => {
+            const shortName = r.name || r.display_name.split(',')[0].trim();
+            switchLocation(shortName, parseFloat(r.lat), parseFloat(r.lon));
+            searchResults.style.display = 'none';
+            searchInput.value = '';
+          });
+          searchResults.appendChild(item);
+        });
+      }
+
+      searchBtn.addEventListener('click', performSearch);
+      searchInput.addEventListener('keydown', (ev) => {
+        if (ev.key === 'Enter') { ev.preventDefault(); performSearch(); }
+        if (ev.key === 'Escape') { searchResults.style.display = 'none'; }
+      });
+
+      document.addEventListener('click', (ev) => {
+        const wrapper = document.querySelector('.search-wrapper');
+        if (wrapper && !wrapper.contains(ev.target)) searchResults.style.display = 'none';
+      });
+
+      document.getElementById('current-location-name').textContent = currentLocation.name;
+      document.getElementById('forecast-location').textContent = currentLocation.name;
+
+      renderFavorites();
+      renderLandmarkMarkers();
+
+      Promise.allSettled([
+        loadRadar(),
+        loadForecast(currentLocation.lat, currentLocation.lon),
+        loadDailyForecast(currentLocation.lat, currentLocation.lon),
+        updateFavoriteTemps(),
+        updateMountainTemps(),
+        updateWaterTemps()
+      ]);
+
+      setInterval(() => {
+        if (!document.hidden) {
+          updateFavoriteTemps();
+          updateMountainTemps();
+          updateWaterTemps();
+          loadDailyForecast(currentLocation.lat, currentLocation.lon);
+        }
+      }, 15 * 60 * 1000);
+
+      window.addEventListener('resize', debounce(() => map.invalidateSize(), 200));
+    }
+  </script>
+</body>
+</html>
